@@ -17,7 +17,7 @@ import {
   invertMoves,
   cancelMoves,
   SOLVED_STATE,
-} from '@/lib/cube/moves'
+} from '@/lib/cube/cube'
 import {
   serializeCubeState,
   parseCubeState,
