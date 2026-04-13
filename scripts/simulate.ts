@@ -6,39 +6,45 @@ import {
   applySingleMove,
   serializeCubeState,
   isSolvedState,
+  type Move,
 } from "../src/lib/cube/cube";
 
 // -----------------------------
-// 入力（ここを自由に変える）
+// ユーティリティ
 // -----------------------------
 
-// 例①：sexy move
-const moves1 = ["R", "U", "R'", "U'"];
+function parseMoves(input: string): Move[] {
+  return input
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean) as Move[];
+}
 
-// 例②：T-perm
-const tPerm = [
-  "R", "U", "R'", "U'",
-  "R'", "F", "R2", "U'", "R'", "U'",
-  "R", "U", "R'", "F'"
-];
+function printState(state: any) {
+  console.log(JSON.stringify(state, null, 2));
+}
 
 // -----------------------------
-// 実行関数
+// メイン処理
 // -----------------------------
 
-function runSimulation(moves: string[]) {
+function runSimulation(moves: Move[], stepMode: boolean) {
   console.log("=================================");
   console.log("Moves:", moves.join(" "));
   console.log("=================================");
 
   let state = SOLVED_STATE;
 
-  moves.forEach((move, i) => {
-    state = applySingleMove(state, move as any);
+  if (stepMode) {
+    moves.forEach((move, i) => {
+      state = applySingleMove(state, move);
 
-    console.log(`\nStep ${i + 1}: ${move}`);
-    console.log(serializeCubeState(state));
-  });
+      console.log(`\nStep ${i + 1}: ${move}`);
+      console.log(serializeCubeState(state));
+    });
+  } else {
+    state = applyMoves(state, moves);
+  }
 
   console.log("\n--- FINAL ---");
   console.log("Serialized:", serializeCubeState(state));
@@ -46,16 +52,64 @@ function runSimulation(moves: string[]) {
 }
 
 // -----------------------------
-// 実行
+// CLI入力処理
 // -----------------------------
 
-// 単発テスト
-runSimulation(moves1);
+const args = process.argv.slice(2);
 
-// T-perm × 2（バグ検証）
-console.log("\n\n=== T-PERM x2 TEST ===");
+// 例:
+// pnpm simulate "R U R' U'"
+// pnpm simulate "R U R' U'" --step
+// pnpm simulate --tperm
 
-const result = applyMoves(SOLVED_STATE, [...tPerm, ...tPerm]);
+if (args.includes("--help")) {
+  console.log(`
+Usage:
+  pnpm simulate "R U R' U'"
+  pnpm simulate "R U R' U'" --step
+  pnpm simulate --tperm
 
-console.log("Result:", serializeCubeState(result));
-console.log("Is Solved:", isSolvedState(result));
+Options:
+  --step     1手ずつ表示
+  --tperm    T-perm ×2テスト
+`);
+  process.exit(0);
+}
+
+// -----------------------------
+// T-permテスト
+// -----------------------------
+
+const tPerm: Move[] = [
+  "R", "U", "R'", "U'",
+  "R'", "F", "R2", "U'", "R'", "U'",
+  "R", "U", "R'", "F'"
+];
+
+if (args.includes("--tperm")) {
+  console.log("=== T-PERM x2 TEST ===");
+
+  const result = applyMoves(SOLVED_STATE, [...tPerm, ...tPerm]);
+
+  console.log("Serialized:", serializeCubeState(result));
+  console.log("Is Solved:", isSolvedState(result));
+
+  process.exit(0);
+}
+
+// -----------------------------
+// 通常実行
+// -----------------------------
+
+const input = args.find((a) => !a.startsWith("--"));
+
+if (!input) {
+  console.log("❌ 手順を入力してください");
+  console.log(`例: pnpm simulate "R U R' U'"`);
+  process.exit(1);
+}
+
+const moves = parseMoves(input);
+const stepMode = args.includes("--step");
+
+runSimulation(moves, stepMode);

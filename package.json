@@ -2,30 +2,37 @@
   "name": "speedcubing-evaluator",
   "version": "0.1.0",
   "private": true,
+
   "scripts": {
     "dev": "next dev",
+    "dev:debug": "NODE_OPTIONS='--inspect' next dev",
     "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "test": "vitest run",
+    "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:unit:watch": "vitest tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:integration:watch": "vitest tests/integration",
+    "test:coverage": "vitest run --coverage",
+    "test:all": "pnpm test:unit && pnpm test:integration",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:headed": "playwright test --headed",
-    "test:coverage": "vitest run --coverage",
-    "test:all": "npm run test:unit && npm run test:integration",
-    "lint": "eslint . --ext .ts,.tsx",
-    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "simulate": "tsx scripts/simulate.ts",
+    "simulate:step": "tsx scripts/simulate.ts --step",
+    "simulate:tperm": "tsx scripts/simulate.ts --tperm",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts"
   },
+
   "dependencies": {
     "cubing": "^0.63.3",
     "next": "16.1.7",
@@ -33,6 +40,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
+
   "devDependencies": {
     "@playwright/test": "^1.44.0",
     "@tailwindcss/postcss": "^4",
