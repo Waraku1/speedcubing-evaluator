@@ -7,12 +7,6 @@ import {
   Move,
 } from "../src/lib/cube/cube";
 
-/**
- * CLI:
- * pnpm simulate "R U R' U'"
- * pnpm simulate "R U" "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
- */
-
 // ─────────────────────────────────────────────────────────────
 // Move parsing
 // ─────────────────────────────────────────────────────────────
@@ -22,7 +16,19 @@ function parseMoves(input: string): Move[] {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Color mapping (ANSI)
+// CLI option parsing
+// ─────────────────────────────────────────────────────────────
+
+type OutputMode = "both" | "text" | "visual";
+
+function parseMode(args: string[]): OutputMode {
+  if (args.includes("--text-only")) return "text";
+  if (args.includes("--visual-only")) return "visual";
+  return "both";
+}
+
+// ─────────────────────────────────────────────────────────────
+// Color mapping（実キューブ配色）
 // ─────────────────────────────────────────────────────────────
 
 const colorMap: Record<string, string> = {
@@ -31,52 +37,46 @@ const colorMap: Record<string, string> = {
   R: "\x1b[42m R \x1b[0m", // green
   L: "\x1b[44m L \x1b[0m", // blue
   D: "\x1b[47m D \x1b[0m", // white
-  B: "\x1b[48;5;208m B \x1b[0m", // orange（256色）
+  B: "\x1b[48;5;208m B \x1b[0m", // orange
 };
 
-// fallback（万一）
 function colorize(c: string): string {
   return colorMap[c] ?? ` ${c} `;
 }
 
 // ─────────────────────────────────────────────────────────────
-// Cube Net Printer
+// Cube Net Printer（視覚）
 // ─────────────────────────────────────────────────────────────
 
 function printCubeNet(state: CubeState) {
   const row = (face: string[], i: number) =>
     `${colorize(face[i])}${colorize(face[i + 1])}${colorize(face[i + 2])}`;
 
-  const U = state.U;
-  const R = state.R;
-  const F = state.F;
-  const D = state.D;
-  const L = state.L;
-  const B = state.B;
+  const { U, R, F, D, L, B } = state;
 
   console.log("");
 
-  // ── U face ──
+  // U
   console.log("        " + row(U, 0));
   console.log("        " + row(U, 3));
   console.log("        " + row(U, 6));
 
   console.log("");
 
-  // ── L F R B ──
+  // L F R B
   for (let i = 0; i < 3; i++) {
-    const offset = i * 3;
+    const o = i * 3;
     console.log(
-      row(L, offset) + " " +
-      row(F, offset) + " " +
-      row(R, offset) + " " +
-      row(B, offset)
+      row(L, o) + " " +
+      row(F, o) + " " +
+      row(R, o) + " " +
+      row(B, o)
     );
   }
 
   console.log("");
 
-  // ── D face ──
+  // D
   console.log("        " + row(D, 0));
   console.log("        " + row(D, 3));
   console.log("        " + row(D, 6));
@@ -85,26 +85,43 @@ function printCubeNet(state: CubeState) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Text output（AI・ログ用）
+// ─────────────────────────────────────────────────────────────
+
+function printTextOutput(state: CubeState) {
+  console.log("\n▶ Result (string):");
+  console.log(serializeCubeState(state));
+
+  console.log("\n▶ Result (JSON):");
+  console.log(JSON.stringify(state, null, 2));
+}
+
+// ─────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────
 
 function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
 
-  if (args.length === 0) {
+  if (rawArgs.length === 0) {
     console.log("❌ 使用方法:");
     console.log('pnpm simulate "R U R\' U\'"');
-    console.log(
-      'pnpm simulate "R U" "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"'
-    );
+    console.log('pnpm simulate "R U" --text-only');
+    console.log('pnpm simulate "R U" --visual-only');
     process.exit(1);
   }
+
+  const mode = parseMode(rawArgs);
+
+  // フラグ除去
+  const args = rawArgs.filter(
+    (a) => a !== "--text-only" && a !== "--visual-only"
+  );
 
   const moves = parseMoves(args[0]);
 
   let state: CubeState = SOLVED_STATE;
 
-  // 初期状態指定
   if (args[1]) {
     try {
       state = parseCubeState(args[1]);
@@ -118,16 +135,16 @@ function main() {
 
   const result = applyMoves(state, moves);
 
-  // ── 出力 ──
+  // ── 出力切替 ──
 
-  console.log("\n▶ Result (string):");
-  console.log(serializeCubeState(result));
+  if (mode === "both" || mode === "text") {
+    printTextOutput(result);
+  }
 
-  console.log("\n▶ Result (JSON):");
-  console.log(JSON.stringify(result, null, 2));
-
-  console.log("\n▶ Cube Net (colored):");
-  printCubeNet(result);
+  if (mode === "both" || mode === "visual") {
+    console.log("\n▶ Cube Net (colored):");
+    printCubeNet(result);
+  }
 }
 
 main();
