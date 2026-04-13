@@ -1,115 +1,133 @@
-// scripts/simulate.ts
-
 import {
   SOLVED_STATE,
   applyMoves,
-  applySingleMove,
   serializeCubeState,
-  isSolvedState,
-  type Move,
+  parseCubeState,
+  CubeState,
+  Move,
 } from "../src/lib/cube/cube";
 
-// -----------------------------
-// ユーティリティ
-// -----------------------------
+/**
+ * CLI:
+ * pnpm simulate "R U R' U'"
+ * pnpm simulate "R U" "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
+ */
+
+// ─────────────────────────────────────────────────────────────
+// Move parsing
+// ─────────────────────────────────────────────────────────────
 
 function parseMoves(input: string): Move[] {
-  return input
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean) as Move[];
+  return input.trim().split(/\s+/) as Move[];
 }
 
-function printState(state: any) {
-  console.log(JSON.stringify(state, null, 2));
+// ─────────────────────────────────────────────────────────────
+// Color mapping (ANSI)
+// ─────────────────────────────────────────────────────────────
+
+const colorMap: Record<string, string> = {
+  U: "\x1b[47m U \x1b[0m", // white
+  R: "\x1b[41m R \x1b[0m", // red
+  F: "\x1b[42m F \x1b[0m", // green
+  D: "\x1b[43m D \x1b[0m", // yellow
+  L: "\x1b[45m L \x1b[0m", // magenta
+  B: "\x1b[44m B \x1b[0m", // blue
+};
+
+// fallback（万一）
+function colorize(c: string): string {
+  return colorMap[c] ?? ` ${c} `;
 }
 
-// -----------------------------
-// メイン処理
-// -----------------------------
+// ─────────────────────────────────────────────────────────────
+// Cube Net Printer
+// ─────────────────────────────────────────────────────────────
 
-function runSimulation(moves: Move[], stepMode: boolean) {
-  console.log("=================================");
-  console.log("Moves:", moves.join(" "));
-  console.log("=================================");
+function printCubeNet(state: CubeState) {
+  const row = (face: string[], i: number) =>
+    `${colorize(face[i])}${colorize(face[i + 1])}${colorize(face[i + 2])}`;
 
-  let state = SOLVED_STATE;
+  const U = state.U;
+  const R = state.R;
+  const F = state.F;
+  const D = state.D;
+  const L = state.L;
+  const B = state.B;
 
-  if (stepMode) {
-    moves.forEach((move, i) => {
-      state = applySingleMove(state, move);
+  console.log("");
 
-      console.log(`\nStep ${i + 1}: ${move}`);
-      console.log(serializeCubeState(state));
-    });
-  } else {
-    state = applyMoves(state, moves);
+  // ── U face ──
+  console.log("        " + row(U, 0));
+  console.log("        " + row(U, 3));
+  console.log("        " + row(U, 6));
+
+  console.log("");
+
+  // ── L F R B ──
+  for (let i = 0; i < 3; i++) {
+    const offset = i * 3;
+    console.log(
+      row(L, offset) + " " +
+      row(F, offset) + " " +
+      row(R, offset) + " " +
+      row(B, offset)
+    );
   }
 
-  console.log("\n--- FINAL ---");
-  console.log("Serialized:", serializeCubeState(state));
-  console.log("Is Solved:", isSolvedState(state));
+  console.log("");
+
+  // ── D face ──
+  console.log("        " + row(D, 0));
+  console.log("        " + row(D, 3));
+  console.log("        " + row(D, 6));
+
+  console.log("");
 }
 
-// -----------------------------
-// CLI入力処理
-// -----------------------------
+// ─────────────────────────────────────────────────────────────
+// Main
+// ─────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
+function main() {
+  const args = process.argv.slice(2);
 
-// 例:
-// pnpm simulate "R U R' U'"
-// pnpm simulate "R U R' U'" --step
-// pnpm simulate --tperm
+  if (args.length === 0) {
+    console.log("❌ 使用方法:");
+    console.log('pnpm simulate "R U R\' U\'"');
+    console.log(
+      'pnpm simulate "R U" "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"'
+    );
+    process.exit(1);
+  }
 
-if (args.includes("--help")) {
-  console.log(`
-Usage:
-  pnpm simulate "R U R' U'"
-  pnpm simulate "R U R' U'" --step
-  pnpm simulate --tperm
+  const moves = parseMoves(args[0]);
 
-Options:
-  --step     1手ずつ表示
-  --tperm    T-perm ×2テスト
-`);
-  process.exit(0);
+  let state: CubeState = SOLVED_STATE;
+
+  // 初期状態指定
+  if (args[1]) {
+    try {
+      state = parseCubeState(args[1]);
+    } catch (e) {
+      console.error("❌ 初期状態が不正:", e);
+      process.exit(1);
+    }
+  }
+
+  console.log("▶ Moves:", moves.join(" "));
+
+  const result = applyMoves(state, moves);
+
+  // ── 出力 ──
+
+  console.log("\n▶ Result (string):");
+  console.log(serializeCubeState(result));
+
+  console.log("\n▶ Result (JSON):");
+  console.log(JSON.stringify(result, null, 2));
+
+  console.log("\n▶ Cube Net (colored):");
+  printCubeNet(result);
 }
 
-// -----------------------------
-// T-permテスト
-// -----------------------------
-
-const tPerm: Move[] = [
-  "R", "U", "R'", "U'",
-  "R'", "F", "R2", "U'", "R'", "U'",
-  "R", "U", "R'", "F'"
-];
-
-if (args.includes("--tperm")) {
-  console.log("=== T-PERM x2 TEST ===");
-
-  const result = applyMoves(SOLVED_STATE, [...tPerm, ...tPerm]);
-
-  console.log("Serialized:", serializeCubeState(result));
-  console.log("Is Solved:", isSolvedState(result));
-
-  process.exit(0);
-}
-
-// -----------------------------
-// 通常実行
-// -----------------------------
-
-const input = args.find((a) => !a.startsWith("--"));
-
-if (!input) {
-  console.log("❌ 手順を入力してください");
-  console.log(`例: pnpm simulate "R U R' U'"`);
-  process.exit(1);
-}
-
-const moves = parseMoves(input);
-const stepMode = args.includes("--step");
-
-runSimulation(moves, stepMode);
+main();
