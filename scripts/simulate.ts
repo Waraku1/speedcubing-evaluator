@@ -26,12 +26,12 @@ function parseMoves(input: string): Move[] {
 // ─────────────────────────────────────────────────────────────
 
 const colorMap: Record<string, string> = {
-  U: "\x1b[47m U \x1b[0m", // white
-  R: "\x1b[41m R \x1b[0m", // red
-  F: "\x1b[42m F \x1b[0m", // green
-  D: "\x1b[43m D \x1b[0m", // yellow
-  L: "\x1b[45m L \x1b[0m", // magenta
-  B: "\x1b[44m B \x1b[0m", // blue
+  U: "\x1b[43m U \x1b[0m", // yellow
+  F: "\x1b[41m F \x1b[0m", // red
+  R: "\x1b[42m R \x1b[0m", // green
+  L: "\x1b[44m L \x1b[0m", // blue
+  D: "\x1b[47m D \x1b[0m", // white
+  B: "\x1b[48;5;208m B \x1b[0m", // orange（256色）
 };
 
 // fallback（万一）
