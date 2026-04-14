@@ -97,102 +97,80 @@ function rotateFaceCW(face: Color[]): Color[] {
 //   (1) X×4 = identity, and (2) (R U R' U')×6 = identity.
 
 /** Apply one CW quarter-turn. Returns a new immutable CubeState. */
+/** Apply one CW quarter-turn. Returns a new immutable CubeState. */
+/** Apply one CW quarter-turn. Returns a new immutable CubeState. */
 function applyBaseCW(state: CubeState, face: Face): CubeState {
   const s = cloneState(state);
 
   switch (face) {
-
     // ── U CW (viewed from top) ──────────────────────────────────────────────
-    // Adjacent cycle: F-top → R-top → B-top(rev) → L-top → F-top
-    //   new_R[0,1,2] = old_F[0,1,2]
-    //   new_B[2,1,0] = old_R[0,1,2]  (top-left of R → top-right of B from behind)
-    //   new_L[0,1,2] = old_B[2,1,0]
-    //   new_F[0,1,2] = old_L[0,1,2]
+    // Adjacent cycle: F(0,1,2) -> L(0,1,2) -> B(0,1,2) -> R(0,1,2) -> F(0,1,2)
+    // Note: Top layer rotates horizontally.
     case "U": {
       s.U = rotateFaceCW(state.U);
-      [s.R[0], s.R[1], s.R[2]] = [state.F[0], state.F[1], state.F[2]];
-      [s.B[2], s.B[1], s.B[0]] = [state.R[0], state.R[1], state.R[2]];
-      [s.L[0], s.L[1], s.L[2]] = [state.B[2], state.B[1], state.B[0]];
-      [s.F[0], s.F[1], s.F[2]] = [state.L[0], state.L[1], state.L[2]];
+      [s.F[0], s.F[1], s.F[2]] = [state.R[0], state.R[1], state.R[2]];
+      [s.L[0], s.L[1], s.L[2]] = [state.F[0], state.F[1], state.F[2]];
+      [s.B[0], s.B[1], s.B[2]] = [state.L[0], state.L[1], state.L[2]];
+      [s.R[0], s.R[1], s.R[2]] = [state.B[0], state.B[1], state.B[2]];
       break;
     }
 
     // ── D CW (viewed from bottom) ───────────────────────────────────────────
-    // Adjacent cycle: R-bot → F-bot → L-bot → B-bot(rev) → R-bot
-    //   new_F[6,7,8] = old_R[6,7,8]
-    //   new_L[6,7,8] = old_F[6,7,8]
-    //   new_B[8,7,6] = old_L[6,7,8]
-    //   new_R[6,7,8] = old_B[8,7,6]
+    // Adjacent cycle: F(6,7,8) -> R(6,7,8) -> B(6,7,8) -> L(6,7,8) -> F(6,7,8)
     case "D": {
       s.D = rotateFaceCW(state.D);
-      [s.F[6], s.F[7], s.F[8]] = [state.R[6], state.R[7], state.R[8]];
-      [s.L[6], s.L[7], s.L[8]] = [state.F[6], state.F[7], state.F[8]];
-      [s.B[8], s.B[7], s.B[6]] = [state.L[6], state.L[7], state.L[8]];
-      [s.R[6], s.R[7], s.R[8]] = [state.B[8], state.B[7], state.B[6]];
+      [s.F[6], s.F[7], s.F[8]] = [state.L[6], state.L[7], state.L[8]];
+      [s.R[6], s.R[7], s.R[8]] = [state.F[6], state.F[7], state.F[8]];
+      [s.B[6], s.B[7], s.B[6]] = [state.R[6], state.R[7], state.R[8]]; // B(6,7,8) corrected
+      [s.B[6], s.B[7], s.B[8]] = [state.R[6], state.R[7], state.R[8]];
+      [s.L[6], s.L[7], s.L[8]] = [state.B[6], state.B[7], state.B[8]];
       break;
     }
 
     // ── R CW (viewed from right) ────────────────────────────────────────────
-    // Adjacent cycle: F-right → U-right → B[0,3,6] → D-right → F-right
-    //   B[0,3,6] is the left column of B from FRONT perspective
-    //   new_U[2,5,8] = old_F[2,5,8]
-    //   new_B[0,3,6] = old_U[2,5,8]
-    //   new_D[2,5,8] = old_B[0,3,6]
-    //   new_F[2,5,8] = old_D[2,5,8]
+    // Adjacent cycle: F(2,5,8) -> U(2,5,8) -> B(6,3,0) -> D(2,5,8) -> F(2,5,8)
+    // B-face is viewed from behind, so its RIGHT column (from front) is B(0,3,6)
+    // but the actual piece flow from U(2,5,8) goes to B(6,3,0) due to 180 deg flip of B.
     case "R": {
       s.R = rotateFaceCW(state.R);
       [s.U[2], s.U[5], s.U[8]] = [state.F[2], state.F[5], state.F[8]];
-      [s.B[0], s.B[3], s.B[6]] = [state.U[2], state.U[5], state.U[8]];
-      [s.D[2], s.D[5], s.D[8]] = [state.B[0], state.B[3], state.B[6]];
+      [s.B[0], s.B[3], s.B[6]] = [state.U[8], state.U[5], state.U[2]];
+      [s.D[2], s.D[5], s.D[8]] = [state.B[6], state.B[3], state.B[0]];
       [s.F[2], s.F[5], s.F[8]] = [state.D[2], state.D[5], state.D[8]];
       break;
     }
 
     // ── L CW (viewed from left) ─────────────────────────────────────────────
-    // Adjacent cycle: U-left → F-left → D-left → B[8,5,2] → U-left
-    //   B[8,5,2] is the right column of B from FRONT perspective
-    //   new_F[0,3,6] = old_U[0,3,6]
-    //   new_D[0,3,6] = old_F[0,3,6]
-    //   new_B[8,5,2] = old_D[0,3,6]
-    //   new_U[0,3,6] = old_B[8,5,2]
+    // Adjacent cycle: F(0,3,6) -> D(0,3,6) -> B(8,5,2) -> U(0,3,6) -> F(0,3,6)
     case "L": {
       s.L = rotateFaceCW(state.L);
+      [s.U[0], s.U[3], s.U[6]] = [state.B[8], state.B[5], state.B[2]];
       [s.F[0], s.F[3], s.F[6]] = [state.U[0], state.U[3], state.U[6]];
       [s.D[0], s.D[3], s.D[6]] = [state.F[0], state.F[3], state.F[6]];
-      [s.B[8], s.B[5], s.B[2]] = [state.D[0], state.D[3], state.D[6]];
-      [s.U[0], s.U[3], s.U[6]] = [state.B[8], state.B[5], state.B[2]];
+      [s.B[2], s.B[5], s.B[8]] = [state.D[6], state.D[3], state.D[0]];
       break;
     }
 
     // ── F CW (viewed from front) ────────────────────────────────────────────
-    // Adjacent cycle: L-right → U-bottom → R-left → D-top(rev) → L-right
-    //   new_U[6,7,8] = old_L[2,5,8]
-    //   new_R[0,3,6] = old_U[6,7,8]
-    //   new_D[2,1,0] = old_R[0,3,6]  (reversed)
-    //   new_L[8,5,2] = old_D[2,1,0]  (reversed)
+    // Adjacent cycle: U(6,7,8) -> R(0,3,6) -> D(2,1,0) -> L(8,5,2) -> U(6,7,8)
     case "F": {
       s.F = rotateFaceCW(state.F);
-      [s.U[6], s.U[7], s.U[8]] = [state.L[2], state.L[5], state.L[8]];
+      [s.U[6], s.U[7], s.U[8]] = [state.L[8], state.L[5], state.L[2]];
       [s.R[0], s.R[3], s.R[6]] = [state.U[6], state.U[7], state.U[8]];
-      [s.D[2], s.D[1], s.D[0]] = [state.R[0], state.R[3], state.R[6]];
-      [s.L[8], s.L[5], s.L[2]] = [state.D[2], state.D[1], state.D[0]];
+      [s.D[0], s.D[1], s.D[2]] = [state.R[6], state.R[3], state.R[0]];
+      [s.L[2], s.L[5], s.L[8]] = [state.D[0], state.D[1], state.D[2]];
       break;
     }
 
     // ── B CW (viewed from back) ─────────────────────────────────────────────
-    // Adjacent cycle: U-top → R[2,5,8] → D-bottom(rev) → L[0,3,6] → U-top
-    //   R[2,5,8] = right column of R from front
-    //   L[0,3,6] = left column of L from front
-    //   new_R[2,5,8] = old_U[0,1,2]
-    //   new_D[8,7,6] = old_R[2,5,8]   (reversed)
-    //   new_L[6,3,0] = old_D[8,7,6]   (reversed)
-    //   new_U[0,1,2] = old_L[6,3,0]   (reversed)
+    // Adjacent cycle: U(0,1,2) -> L(6,3,0) -> D(8,7,6) -> R(2,5,8) -> U(0,1,2)
+    // Viewed from BACK: CW rotation means U-top flows to L-left(front view).
     case "B": {
       s.B = rotateFaceCW(state.B);
-      [s.R[2], s.R[5], s.R[8]] = [state.U[0], state.U[1], state.U[2]];
-      [s.D[8], s.D[7], s.D[6]] = [state.R[2], state.R[5], state.R[8]];
-      [s.L[6], s.L[3], s.L[0]] = [state.D[8], state.D[7], state.D[6]];
-      [s.U[0], s.U[1], s.U[2]] = [state.L[6], state.L[3], state.L[0]];
+      [s.U[0], s.U[1], s.U[2]] = [state.R[2], state.R[5], state.R[8]];
+      [s.R[2], s.R[5], s.R[8]] = [state.D[8], state.D[7], state.D[6]];
+      [s.D[6], s.D[7], s.D[8]] = [state.L[0], state.L[3], state.L[6]];
+      [s.L[0], s.L[3], s.L[6]] = [state.U[2], state.U[1], state.U[0]];
       break;
     }
   }
