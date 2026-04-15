@@ -7,17 +7,34 @@ import {
   Move,
 } from "../src/lib/cube/cube";
 
-// ─────────────────────────────────────────────────────────────
-// Move parsing
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Move parsing（安全版）
+// ─────────────────────────────────────────────
+
+const VALID_MOVES = new Set<Move>([
+  "U","U'","U2",
+  "R","R'","R2",
+  "F","F'","F2",
+  "D","D'","D2",
+  "L","L'","L2",
+  "B","B'","B2",
+]);
 
 function parseMoves(input: string): Move[] {
-  return input.trim().split(/\s+/) as Move[];
+  const tokens = input.trim().split(/\s+/);
+
+  for (const t of tokens) {
+    if (!VALID_MOVES.has(t as Move)) {
+      throw new Error(`Invalid move: ${t}`);
+    }
+  }
+
+  return tokens as Move[];
 }
 
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // CLI option parsing
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 type OutputMode = "both" | "text" | "visual";
 
@@ -27,9 +44,9 @@ function parseMode(args: string[]): OutputMode {
   return "both";
 }
 
-// ─────────────────────────────────────────────────────────────
-// Color mapping（実キューブ配色）
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Color mapping
+// ─────────────────────────────────────────────
 
 const colorMap: Record<string, string> = {
   U: "\x1b[43m U \x1b[0m", // yellow
@@ -44,9 +61,9 @@ function colorize(c: string): string {
   return colorMap[c] ?? ` ${c} `;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Cube Net Printer（視覚）
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Cube Net Printer
+// ─────────────────────────────────────────────
 
 function printCubeNet(state: CubeState) {
   const row = (face: string[], i: number) =>
@@ -56,14 +73,12 @@ function printCubeNet(state: CubeState) {
 
   console.log("");
 
-  // U
   console.log("        " + row(U, 0));
   console.log("        " + row(U, 3));
   console.log("        " + row(U, 6));
 
   console.log("");
 
-  // L F R B
   for (let i = 0; i < 3; i++) {
     const o = i * 3;
     console.log(
@@ -76,7 +91,6 @@ function printCubeNet(state: CubeState) {
 
   console.log("");
 
-  // D
   console.log("        " + row(D, 0));
   console.log("        " + row(D, 3));
   console.log("        " + row(D, 6));
@@ -84,9 +98,9 @@ function printCubeNet(state: CubeState) {
   console.log("");
 }
 
-// ─────────────────────────────────────────────────────────────
-// Text output（AI・ログ用）
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Text output
+// ─────────────────────────────────────────────
 
 function printTextOutput(state: CubeState) {
   console.log("\n▶ Result (string):");
@@ -96,9 +110,9 @@ function printTextOutput(state: CubeState) {
   console.log(JSON.stringify(state, null, 2));
 }
 
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // Main
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 function main() {
   const rawArgs = process.argv.slice(2);
@@ -113,14 +127,24 @@ function main() {
 
   const mode = parseMode(rawArgs);
 
-  // フラグ除去
   const args = rawArgs.filter(
     (a) => a !== "--text-only" && a !== "--visual-only"
   );
 
-  const moves = parseMoves(args[0]);
+  if (!args[0]) {
+    console.error("❌ 手順が指定されていません");
+    process.exit(1);
+  }
 
-  let state: CubeState = SOLVED_STATE;
+  let moves: Move[];
+  try {
+    moves = parseMoves(args[0]);
+  } catch (e) {
+    console.error("❌ 手順エラー:", e);
+    process.exit(1);
+  }
+
+  let state: CubeState = JSON.parse(JSON.stringify(SOLVED_STATE));
 
   if (args[1]) {
     try {
@@ -134,8 +158,6 @@ function main() {
   console.log("▶ Moves:", moves.join(" "));
 
   const result = applyMoves(state, moves);
-
-  // ── 出力切替 ──
 
   if (mode === "both" || mode === "text") {
     printTextOutput(result);
