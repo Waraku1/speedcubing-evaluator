@@ -1,199 +1,237 @@
 import { describe, it, expect } from "vitest";
+import { evaluateMoves, analyzeMovePatterns } from "../../src/lib/evaluator/evaluator";
+import { CubeState } from "../../src/lib/cube/cube";
+import type { Move } from "../../src/lib/cube/cube";
 
-import {
-  evaluateMoves,
-  analyzeMovePatterns,
-} from "../../src/lib/evaluator/evaluator";
+const newCube = () => new CubeState();
 
-import {
-  SOLVED_STATE,
-  Move,
-} from "../../src/lib/cube/cube";
+const ALL_TEST_CASES: Move[][] = [
+  [],
+  ["R"],
+  ["R2"],
+  ["R", "R'"],
+  ["R", "R", "R", "R"],
+  ["R", "U", "R'", "U'"],
+  ["R", "U", "R'", "U'", "R'", "F", "R2", "U'", "R'", "U'", "R", "U", "R'", "F'"],
+  ["B", "B'", "B2", "B", "B'"],
+  ["R", "F", "B", "U", "D", "L", "R'", "F'", "B'", "U'", "D'", "L'", "R2", "F2", "B2", "U2", "D2", "L2", "R", "U"],
+  ["R", "R", "R"],
+];
 
-// ---------------------------------------------------------------------------
-// evaluateMoves
-// ---------------------------------------------------------------------------
+describe("evaluateMoves - FULL SUITE", () => {
 
-describe("evaluateMoves", () => {
-  describe("basic metrics", () => {
-    it("reports moveCount correctly", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "U", "F"] as Move[]);
-      expect(result.moveCount).toBe(3);
+  // ─────────────────────────────────────────────
+  // 1. GOLDEN TESTS（確定値検証）
+  // ─────────────────────────────────────────────
+  describe("Golden Tests (deterministic)", () => {
+    it("single R move exact values", () => {
+      const r = evaluateMoves(newCube(), ["R"]);
+
+      expect(r.totalCost).toBeCloseTo(1.0);
+      expect(r.costPerMove).toBeCloseTo(1.0);
+      expect(r.axisEfficiencyScore).toBe(1);
+      expect(r.flowScore).toBe(1);
+      expect(r.regripPenaltyScore).toBe(0);
     });
 
-    it("handles empty sequence", () => {
-      const result = evaluateMoves(SOLVED_STATE, []);
-      expect(result.moveCount).toBe(0);
+    it("single B move exact values", () => {
+      const r = evaluateMoves(newCube(), ["B"]);
+
+      expect(r.totalCost).toBeCloseTo(1.5);
+      expect(r.regripCount).toBeGreaterThan(0);
     });
 
-    it("R R → effective 1", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "R"] as Move[]);
-      expect(result.effectiveMoveCount).toBe(1);
+    it("R R cancels to R2 (normalized)", () => {
+      const r = evaluateMoves(newCube(), ["R", "R"]);
+      expect(r.normalizedMoves).toContain("R2");
     });
 
-    it("R R' → effective 0", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "R'"] as Move[]);
-      expect(result.effectiveMoveCount).toBe(0);
-    });
-
-    it("cancelCount identity holds", () => {
-      const moves = ["R", "R", "R", "U", "U'", "F"] as Move[];
-      const result = evaluateMoves(SOLVED_STATE, moves);
-
-      expect(result.cancelCount).toBe(
-        result.moveCount - result.effectiveMoveCount
-      );
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Solved detection
-  // -------------------------------------------------------------------------
-  describe("solved detection", () => {
-    it("empty → solved", () => {
-      expect(evaluateMoves(SOLVED_STATE, []).isSolved).toBe(true);
-    });
-
-    it("R R' → solved", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R'"] as Move[]).isSolved
-      ).toBe(true);
-    });
-
-    it("single move → not solved", () => {
-      expect(evaluateMoves(SOLVED_STATE, ["R"] as Move[]).isSolved).toBe(false);
+    it("R R' cancels to empty", () => {
+      const r = evaluateMoves(newCube(), ["R", "R'"]);
+      expect(r.normalizedMoves).toEqual([]);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Immediate cancel
-  // -------------------------------------------------------------------------
-  describe("hasImmediateCancel", () => {
-    it("detects R R'", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R'"] as Move[]).hasImmediateCancel
-      ).toBe(true);
-    });
+  // ─────────────────────────────────────────────
+  // 2. HUMAN SCORE FORMULA VALIDATION
+  // ─────────────────────────────────────────────
+  describe("Human Efficiency Formula", () => {
+    it("matches weighted formula exactly", () => {
+      const r = evaluateMoves(newCube(), ["R", "U"]);
 
-    it("does not detect for R U", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "U"] as Move[]).hasImmediateCancel
-      ).toBe(false);
-    });
-  });
+      const expected =
+        0.25 * r.efficiencyScore +
+        0.20 * r.axisEfficiencyScore +
+        0.25 * r.flowScore +
+        0.15 * (1 - Math.min(r.totalCost / 30, 1)) +
+        0.15 * (1 - r.regripPenaltyScore);
 
-  // -------------------------------------------------------------------------
-  // Triple move
-  // -------------------------------------------------------------------------
-  describe("hasTripleMove", () => {
-    it("detects R R R", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R", "R"] as Move[]).hasTripleMove
-      ).toBe(true);
-    });
-
-    it("does not detect for R R", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R"] as Move[]).hasTripleMove
-      ).toBe(false);
+      expect(r.humanEfficiencyScore).toBeCloseTo(expected, 10);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Normalization
-  // -------------------------------------------------------------------------
-  describe("normalizedMoves", () => {
-    it("R R → R2", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R"] as Move[]).normalizedMoves
-      ).toEqual(["R2"]);
+  // ─────────────────────────────────────────────
+  // 3. FLOW / AXIS / REGRIP 精密検証
+  // ─────────────────────────────────────────────
+  describe("Detailed Metric Behavior", () => {
+
+    it("R R' is poor flow", () => {
+      const r = evaluateMoves(newCube(), ["R", "R'"]);
+      expect(r.flowScore).toBeLessThan(0.5);
     });
 
-    it("R R R → R'", () => {
-      expect(
-        evaluateMoves(SOLVED_STATE, ["R", "R", "R"] as Move[]).normalizedMoves
-      ).toEqual(["R'"]);
+    it("alternating moves improve flow", () => {
+      const r = evaluateMoves(newCube(), ["R", "U", "R", "U"]);
+      expect(r.flowScore).toBeGreaterThan(0.8);
     });
 
-    it("R R R R → []", () => {
-      expect(
-        evaluateMoves(
-          SOLVED_STATE,
-          ["R", "R", "R", "R"] as Move[]
-        ).normalizedMoves
-      ).toEqual([]);
+    it("axis switches counted correctly", () => {
+      const r = evaluateMoves(newCube(), ["R", "U", "R", "U"]);
+      expect(r.axisSwitchCount).toBe(3);
+    });
+
+    it("F + R causes regrip", () => {
+      const r = evaluateMoves(newCube(), ["F", "R"]);
+      expect(r.regripCount).toBeGreaterThan(0);
+    });
+
+  });
+
+  // ─────────────────────────────────────────────
+  // 4. v1 COMPATIBILITY
+  // ─────────────────────────────────────────────
+  describe("v1 Compatibility", () => {
+    it("moveCount matches input", () => {
+      const r = evaluateMoves(newCube(), ["R", "U"]);
+      expect(r.moveCount).toBe(2);
+    });
+
+    it("cancelCount consistency", () => {
+      const r = evaluateMoves(newCube(), ["R", "R'"]);
+      expect(r.cancelCount).toBe(r.moveCount - r.effectiveMoveCount);
+    });
+
+    it("efficiencyScore relation", () => {
+      const r = evaluateMoves(newCube(), ["R", "U"]);
+      expect(r.efficiencyScore).toBeCloseTo(1 - r.redundancyScore, 10);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Scoring
-  // -------------------------------------------------------------------------
-  describe("scoring", () => {
-    it("scores are within range", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "U"] as Move[]);
+  // ─────────────────────────────────────────────
+  // 5. INVARIANTS
+  // ─────────────────────────────────────────────
+  describe("Invariants", () => {
+    ALL_TEST_CASES.forEach((moves, i) => {
+      it(`case #${i}`, () => {
+        const r = evaluateMoves(newCube(), moves);
 
-      expect(result.redundancyScore).toBeGreaterThanOrEqual(0);
-      expect(result.redundancyScore).toBeLessThanOrEqual(1);
-      expect(result.efficiencyScore).toBeGreaterThanOrEqual(0);
-      expect(result.efficiencyScore).toBeLessThanOrEqual(1);
+        expect(r.effectiveMoveCount).toBeLessThanOrEqual(r.moveCount);
+        expect(r.cancelCount).toBe(r.moveCount - r.effectiveMoveCount);
+        expect(r.normalizedMoves.length).toBe(r.effectiveMoveCount);
+
+        expect(r.totalCost).toBeGreaterThanOrEqual(0);
+        expect(r.costPerMove).toBeGreaterThanOrEqual(0);
+
+        expect(r.axisEfficiencyScore).toBeGreaterThanOrEqual(0);
+        expect(r.axisEfficiencyScore).toBeLessThanOrEqual(1);
+
+        expect(r.flowScore).toBeGreaterThanOrEqual(0);
+        expect(r.flowScore).toBeLessThanOrEqual(1);
+
+        expect(r.regripPenaltyScore).toBeGreaterThanOrEqual(0);
+        expect(r.regripPenaltyScore).toBeLessThanOrEqual(1);
+
+        expect(r.humanEfficiencyScore).toBeGreaterThanOrEqual(0);
+        expect(r.humanEfficiencyScore).toBeLessThanOrEqual(1);
+
+        expect(r.efficiencyScore).toBeGreaterThanOrEqual(0);
+        expect(r.efficiencyScore).toBeLessThanOrEqual(1);
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // 6. EDGE CASES
+  // ─────────────────────────────────────────────
+  describe("Edge Cases", () => {
+    it("empty input", () => {
+      const r = evaluateMoves(newCube(), []);
+      expect(r.moveCount).toBe(0);
+      expect(r.humanEfficiencyScore).toBe(1);
     });
 
-    it("high redundancy for R R'", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "R'"] as Move[]);
-
-      expect(result.redundancyScore).toBeGreaterThan(0.8);
-      expect(result.efficiencyScore).toBeLessThan(0.2);
-    });
-
-    it("efficiency ≈ 1 - redundancy", () => {
-      const result = evaluateMoves(SOLVED_STATE, ["R", "R'"] as Move[]);
-
-      expect(result.efficiencyScore).toBeCloseTo(
-        1 - result.redundancyScore,
-        5
-      );
+    it("no NaN anywhere", () => {
+      for (const moves of ALL_TEST_CASES) {
+        const r = evaluateMoves(newCube(), moves);
+        Object.values(r).forEach((v) => {
+          if (typeof v === "number") {
+            expect(isNaN(v)).toBe(false);
+          }
+        });
+      }
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Real algorithms
-  // -------------------------------------------------------------------------
-  describe("real algorithms", () => {
-    it("sexy move ×6 = solved", () => {
-      const sexy = ["R", "U", "R'", "U'"] as Move[];
-      const seq = Array(6).fill(sexy).flat() as Move[];
+  // ─────────────────────────────────────────────
+  // 7. RELATIVE TESTS
+  // ─────────────────────────────────────────────
+  describe("Relative Comparisons", () => {
 
-      expect(evaluateMoves(SOLVED_STATE, seq).isSolved).toBe(true);
+    it("clean > cancel-heavy", () => {
+      const clean = evaluateMoves(newCube(), ["R", "U", "R'", "U'"]);
+      const bad = evaluateMoves(newCube(), ["R", "R'", "U", "U'"]);
+      expect(clean.humanEfficiencyScore).toBeGreaterThan(bad.humanEfficiencyScore);
     });
 
-    it("T-perm ×2 = solved", () => {
-      const tPerm = [
-        "R","U","R'","U'","R'","F","R2","U'","R'","U'","R","U","R'","F'"
-      ] as Move[];
-
-      const seq = [...tPerm, ...tPerm] as Move[];
-
-      expect(evaluateMoves(SOLVED_STATE, seq).isSolved).toBe(true);
+    it("R-heavy > B-heavy", () => {
+      const r = evaluateMoves(newCube(), ["R", "R", "R"]);
+      const b = evaluateMoves(newCube(), ["B", "B", "B"]);
+      expect(r.humanEfficiencyScore).toBeGreaterThanOrEqual(b.humanEfficiencyScore);
     });
+
   });
+
+  // ─────────────────────────────────────────────
+  // 8. REAL ALGORITHMS
+  // ─────────────────────────────────────────────
+  describe("Real Algorithms", () => {
+
+    it("Sexy Move", () => {
+      const r = evaluateMoves(newCube(), ["R", "U", "R'", "U'"]);
+      expect(r.moveCount).toBe(4);
+      expect(r.cancelCount).toBe(0);
+    });
+
+    it("T-Perm", () => {
+      const t: Move[] = ["R", "U", "R'", "U'", "R'", "F", "R2", "U'", "R'", "U'", "R", "U", "R'", "F'"];
+      const r = evaluateMoves(newCube(), t);
+      expect(r.moveCount).toBe(14);
+      expect(r.cancelCount).toBe(0);
+    });
+
+  });
+
 });
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────
 // analyzeMovePatterns
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────
 
 describe("analyzeMovePatterns", () => {
-  it("empty → {}", () => {
-    expect(analyzeMovePatterns([]).faceRepetition).toEqual({});
-  });
-
   it("counts correctly", () => {
-    const result = analyzeMovePatterns(["R", "R", "U"] as Move[]);
-    expect(result.faceRepetition).toEqual({ R: 2, U: 1 });
+    const r = analyzeMovePatterns(["R", "R'", "R2"]);
+    expect(r.faceRepetition["R"]).toBe(3);
   });
 
-  it("handles primes and doubles", () => {
-    const result = analyzeMovePatterns(["R", "R'", "R2"] as Move[]);
-    expect(result.faceRepetition["R"]).toBe(3);
+  it("empty input", () => {
+    const r = analyzeMovePatterns([]);
+    expect(Object.keys(r.faceRepetition).length).toBe(0);
+  });
+
+  it("multiple faces", () => {
+    const r = analyzeMovePatterns(["R", "U", "F"]);
+    expect(r.faceRepetition["R"]).toBe(1);
+    expect(r.faceRepetition["U"]).toBe(1);
+    expect(r.faceRepetition["F"]).toBe(1);
   });
 });

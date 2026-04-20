@@ -121,7 +121,6 @@ function applyBaseCW(state: CubeState, face: Face): CubeState {
       s.D = rotateFaceCW(state.D);
       [s.F[6], s.F[7], s.F[8]] = [state.L[6], state.L[7], state.L[8]];
       [s.R[6], s.R[7], s.R[8]] = [state.F[6], state.F[7], state.F[8]];
-      [s.B[6], s.B[7], s.B[6]] = [state.R[6], state.R[7], state.R[8]]; // B(6,7,8) corrected
       [s.B[6], s.B[7], s.B[8]] = [state.R[6], state.R[7], state.R[8]];
       [s.L[6], s.L[7], s.L[8]] = [state.B[6], state.B[7], state.B[8]];
       break;
