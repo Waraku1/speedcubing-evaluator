@@ -7,6 +7,7 @@ import {
 import {
   generateSolutions,
   verifySolution,
+  compressMoves,
 } from "./generator";
 
 // ─────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ results.forEach(
     );
 
     console.log(
-      result.solution
+      result.displaySolution
     );
 
     console.log(
@@ -99,4 +100,24 @@ results.forEach(
 
     console.log("");
   }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Compression test
+// ─────────────────────────────────────────────────────────────
+
+console.log(
+  "compression test:"
+);
+
+console.log(
+  compressMoves([
+    "L'",
+    "R",
+    "U",
+    "L",
+    "R'",
+    "L2",
+    "R2",
+  ])
 );

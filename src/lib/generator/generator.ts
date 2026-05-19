@@ -13,6 +13,16 @@ import {
 } from "../cube/cube";
 
 // ─────────────────────────────────────────────────────────────
+// Display notation
+// ─────────────────────────────────────────────────────────────
+
+export type DisplayMove =
+  | Move
+  | "M"
+  | "M'"
+  | "M2";
+
+// ─────────────────────────────────────────────────────────────
 // Solver initialization
 // ─────────────────────────────────────────────────────────────
 
@@ -42,7 +52,8 @@ const ALL_MOVES = [
   "B", "B'", "B2",
 ] as const satisfies readonly Move[];
 
-const VALID_MOVES = new Set<Move>(ALL_MOVES);
+const VALID_MOVES =
+  new Set<Move>(ALL_MOVES);
 
 // ─────────────────────────────────────────────────────────────
 // Move helpers
@@ -70,12 +81,92 @@ function invertMove(
 }
 
 // ─────────────────────────────────────────────────────────────
+// Compression
+// ─────────────────────────────────────────────────────────────
+
+export function compressMoves(
+  moves: readonly Move[]
+): DisplayMove[] {
+
+  const result: DisplayMove[] = [];
+
+  let i = 0;
+
+  while (i < moves.length) {
+
+    const a = moves[i];
+    const b = moves[i + 1];
+
+    // ─────────────────────────
+    // M
+    // ─────────────────────────
+
+    if (
+      a === "L'"
+      && b === "R"
+    ) {
+
+      result.push("M");
+
+      i += 2;
+
+      continue;
+    }
+
+    // ─────────────────────────
+    // M'
+    // ─────────────────────────
+
+    if (
+      a === "L"
+      && b === "R'"
+    ) {
+
+      result.push("M'");
+
+      i += 2;
+
+      continue;
+    }
+
+    // ─────────────────────────
+    // M2
+    // ─────────────────────────
+
+    if (
+      a === "L2"
+      && b === "R2"
+    ) {
+
+      result.push("M2");
+
+      i += 2;
+
+      continue;
+    }
+
+    result.push(a);
+
+    i++;
+  }
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
 
 export type SolveResult = {
-  readonly solution: Move[];
-  readonly normalizedLength: number;
+
+  readonly solution:
+    Move[];
+
+  readonly displaySolution:
+    DisplayMove[];
+
+  readonly normalizedLength:
+    number;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -95,13 +186,20 @@ function parseAlgorithm(
 
   for (const token of tokens) {
 
-    if (!VALID_MOVES.has(token as Move)) {
+    if (
+      !VALID_MOVES.has(
+        token as Move
+      )
+    ) {
+
       throw new Error(
         `Invalid move from solver: ${token}`
       );
     }
 
-    result.push(token as Move);
+    result.push(
+      token as Move
+    );
   }
 
   return result;
@@ -115,7 +213,9 @@ function encodeCubeState(
   state: CubeState
 ): string {
 
-  return serializeCubeState(state);
+  return serializeCubeState(
+    state
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -147,7 +247,10 @@ export function generateSolutions(
   ensureSolverInitialized();
 
   const uniqueSolutions =
-    new Map<string, SolveResult>();
+    new Map<
+      string,
+      SolveResult
+    >();
 
   for (
     let i = 0;
@@ -155,9 +258,9 @@ export function generateSolutions(
     i++
   ) {
 
-    // ─────────────────────────────
-    // random premove
-    // ─────────────────────────────
+    // ─────────────────────────
+    // random premoves
+    // ─────────────────────────
 
     const premoveCount =
       Math.floor(
@@ -185,9 +288,9 @@ export function generateSolutions(
       );
     }
 
-    // ─────────────────────────────
+    // ─────────────────────────
     // apply premoves
-    // ─────────────────────────────
+    // ─────────────────────────
 
     const modifiedState =
       applyMoves(
@@ -213,15 +316,15 @@ export function generateSolutions(
         rawSolution
       );
 
-    // ─────────────────────────────
-    // undo premoves
-    // ─────────────────────────────
+    // ─────────────────────────
+    // compose final solution
+    // ─────────────────────────
 
     const finalSolution =
-  cancelMoves([
-    ...premoves,
-    ...parsed,
-  ]);
+      cancelMoves([
+        ...premoves,
+        ...parsed,
+      ]);
 
     const key =
       finalSolution.join(
@@ -239,6 +342,11 @@ export function generateSolutions(
         {
           solution:
             finalSolution,
+
+          displaySolution:
+            compressMoves(
+              finalSolution
+            ),
 
           normalizedLength:
             finalSolution.length,
