@@ -1,15 +1,16 @@
 import Cube from "cubejs";
+Cube.initSolver();
 
 import type {
   CubeState,
   Move,
-} from "../cube";
+} from "../cube/cube";
 
 import {
   serializeCubeState,
   applyMoves,
   isSolvedState,
-} from "../cube";
+} from "../cube/cube";
 
 // ─────────────────────────────────────────────────────────────
 // Constants

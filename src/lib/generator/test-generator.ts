@@ -2,7 +2,7 @@ import {
   SOLVED_STATE,
   applyMoves,
   type Move,
-} from "../cube";
+} from "../cube/cube";
 
 import {
   generateSolution,
