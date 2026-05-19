@@ -5,9 +5,15 @@ import {
 } from "../cube/cube";
 
 import {
-  generateSolution,
+  generateSolutions,
   verifySolution,
 } from "./generator";
+
+// ─────────────────────────────────────────────────────────────
+// Configuration
+// ─────────────────────────────────────────────────────────────
+
+const NUMBER_OF_SOLUTIONS = 10;
 
 // ─────────────────────────────────────────────────────────────
 // Scramble
@@ -32,31 +38,65 @@ const scrambled = applyMoves(
 );
 
 // ─────────────────────────────────────────────────────────────
-// Solve
+// Generate solutions
 // ─────────────────────────────────────────────────────────────
 
-const result = generateSolution(
-  scrambled
-);
+const results =
+  generateSolutions(
+    scrambled,
+    NUMBER_OF_SOLUTIONS
+  );
 
 // ─────────────────────────────────────────────────────────────
 // Output
 // ─────────────────────────────────────────────────────────────
+
+console.log("");
 
 console.log("scramble:");
 console.log(scramble);
 
 console.log("");
 
-console.log("solution:");
-console.log(result.solution);
+console.log(
+  `requested solutions: ${NUMBER_OF_SOLUTIONS}`
+);
+
+console.log(
+  `generated solutions: ${results.length}`
+);
 
 console.log("");
 
-console.log("verified:");
-console.log(
-  verifySolution(
-    scrambled,
-    result.solution
-  )
+results.forEach(
+  (
+    result,
+    index
+  ) => {
+
+    console.log(
+      `solution ${index + 1}:`
+    );
+
+    console.log(
+      result.solution
+    );
+
+    console.log(
+      `length: ${result.normalizedLength}`
+    );
+
+    console.log(
+      "verified:"
+    );
+
+    console.log(
+      verifySolution(
+        scrambled,
+        result.solution
+      )
+    );
+
+    console.log("");
+  }
 );

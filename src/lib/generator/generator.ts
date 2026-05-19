@@ -1,5 +1,4 @@
 import Cube from "cubejs";
-Cube.initSolver();
 
 import type {
   CubeState,
@@ -10,7 +9,25 @@ import {
   serializeCubeState,
   applyMoves,
   isSolvedState,
+  cancelMoves,
 } from "../cube/cube";
+
+// ─────────────────────────────────────────────────────────────
+// Solver initialization
+// ─────────────────────────────────────────────────────────────
+
+let solverInitialized = false;
+
+function ensureSolverInitialized(): void {
+
+  if (solverInitialized) {
+    return;
+  }
+
+  Cube.initSolver();
+
+  solverInitialized = true;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -26,6 +43,31 @@ const ALL_MOVES = [
 ] as const satisfies readonly Move[];
 
 const VALID_MOVES = new Set<Move>(ALL_MOVES);
+
+// ─────────────────────────────────────────────────────────────
+// Move helpers
+// ─────────────────────────────────────────────────────────────
+
+function invertMove(
+  move: Move
+): Move {
+
+  if (
+    move.endsWith("2")
+  ) {
+    return move;
+  }
+
+  if (
+    move.endsWith("'")
+  ) {
+    return move[0] as Move;
+  }
+
+  return (
+    move + "'"
+  ) as Move;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -77,28 +119,144 @@ function encodeCubeState(
 }
 
 // ─────────────────────────────────────────────────────────────
-// Public API
+// Single solution
 // ─────────────────────────────────────────────────────────────
 
 export function generateSolution(
   state: CubeState
 ): SolveResult {
 
-  const encoded = encodeCubeState(state);
+  const results =
+    generateSolutions(
+      state,
+      1
+    );
 
-  const cube = Cube.fromString(encoded);
+  return results[0];
+}
 
-  const rawSolution = cube.solve();
+// ─────────────────────────────────────────────────────────────
+// Multiple solutions
+// ─────────────────────────────────────────────────────────────
 
-  const solution = parseAlgorithm(
-    rawSolution
-  );
+export function generateSolutions(
+  state: CubeState,
+  count: number
+): SolveResult[] {
 
-  return {
-    solution,
-    normalizedLength:
-      solution.length,
-  };
+  ensureSolverInitialized();
+
+  const uniqueSolutions =
+    new Map<string, SolveResult>();
+
+  for (
+    let i = 0;
+    i < count * 50;
+    i++
+  ) {
+
+    // ─────────────────────────────
+    // random premove
+    // ─────────────────────────────
+
+    const premoveCount =
+      Math.floor(
+        Math.random() * 3
+      );
+
+    const premoves: Move[] = [];
+
+    for (
+      let j = 0;
+      j < premoveCount;
+      j++
+    ) {
+
+      const randomMove =
+        ALL_MOVES[
+          Math.floor(
+            Math.random()
+            * ALL_MOVES.length
+          )
+        ];
+
+      premoves.push(
+        randomMove
+      );
+    }
+
+    // ─────────────────────────────
+    // apply premoves
+    // ─────────────────────────────
+
+    const modifiedState =
+      applyMoves(
+        state,
+        premoves
+      );
+
+    const encoded =
+      encodeCubeState(
+        modifiedState
+      );
+
+    const cube =
+      Cube.fromString(
+        encoded
+      );
+
+    const rawSolution =
+      cube.solve();
+
+    const parsed =
+      parseAlgorithm(
+        rawSolution
+      );
+
+    // ─────────────────────────────
+    // undo premoves
+    // ─────────────────────────────
+
+    const finalSolution =
+  cancelMoves([
+    ...premoves,
+    ...parsed,
+  ]);
+
+    const key =
+      finalSolution.join(
+        " "
+      );
+
+    if (
+      !uniqueSolutions.has(
+        key
+      )
+    ) {
+
+      uniqueSolutions.set(
+        key,
+        {
+          solution:
+            finalSolution,
+
+          normalizedLength:
+            finalSolution.length,
+        }
+      );
+    }
+
+    if (
+      uniqueSolutions.size
+      >= count
+    ) {
+      break;
+    }
+  }
+
+  return [
+    ...uniqueSolutions.values()
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -110,10 +268,13 @@ export function verifySolution(
   solution: readonly Move[]
 ): boolean {
 
-  const finalState = applyMoves(
-    initialState,
-    [...solution]
-  );
+  const finalState =
+    applyMoves(
+      initialState,
+      [...solution]
+    );
 
-  return isSolvedState(finalState);
+  return isSolvedState(
+    finalState
+  );
 }
