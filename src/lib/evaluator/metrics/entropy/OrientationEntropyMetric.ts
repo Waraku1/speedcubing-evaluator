@@ -4,31 +4,33 @@ from "../../transition/Transition";
 import { calculateEntropy }
 from "../../state-space/EntropyCalculator";
 
-export class GripEntropyMetric {
+export class OrientationEntropyMetric {
   evaluate(
     transitions: Transition[]
   ): number {
-    const counts =
+    const buckets =
       new Map<string, number>();
 
     for (
       const transition
       of transitions
     ) {
-      const key =
-        JSON.stringify(
-          transition.after.grip
-        );
+      const certainty =
+        transition.after.orientation
+          .certainty;
 
-      counts.set(
-        key,
-        (counts.get(key) ?? 0)
+      const bucket =
+        certainty.toFixed(1);
+
+      buckets.set(
+        bucket,
+        (buckets.get(bucket) ?? 0)
           + 1
       );
     }
 
     return calculateEntropy(
-      [...counts.values()]
+      [...buckets.values()]
     );
   }
 }

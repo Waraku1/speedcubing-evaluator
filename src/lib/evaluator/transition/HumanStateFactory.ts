@@ -6,6 +6,8 @@ export function createInitialHumanState(): HumanState {
       x: 0,
       y: 0,
       z: 0,
+
+      certainty: 1,
     },
 
     grip: {
