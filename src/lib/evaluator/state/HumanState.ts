@@ -1,5 +1,6 @@
 import { FingerState } from "./FingerState";
 import { GripState } from "./GripState";
+import { MomentumState } from "./MomentumState";
 import { OrientationState } from "./OrientationState";
 
 export type HumanState = {
@@ -8,4 +9,6 @@ export type HumanState = {
   grip: GripState;
 
   fingers: FingerState;
+
+  momentum: MomentumState;
 };

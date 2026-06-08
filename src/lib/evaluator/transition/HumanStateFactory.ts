@@ -28,6 +28,24 @@ export function createInitialHumanState(): HumanState {
         R_INDEX: true,
         R_MIDDLE: true,
       },
+
+      fatigue: {
+        L_THUMB: 0,
+        L_INDEX: 0,
+        L_MIDDLE: 0,
+
+        R_THUMB: 0,
+        R_INDEX: 0,
+        R_MIDDLE: 0,
+      },
+
+      coordination: 1,
+    },
+
+    momentum: {
+      continuity: 1,
+
+      velocity: 1,
     },
   };
 }

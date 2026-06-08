@@ -8,4 +8,8 @@ export type FingerId =
 
 export type FingerState = {
   available: Record<FingerId, boolean>;
+
+  fatigue: Record<FingerId, number>;
+
+  coordination: number;
 };

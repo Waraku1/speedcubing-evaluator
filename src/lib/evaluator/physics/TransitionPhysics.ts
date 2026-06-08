@@ -5,6 +5,9 @@ import { HumanState } from "../state/HumanState";
 import { extractActionDemand }
 from "./ActionDemandExtractor";
 
+import { mapDemandToEffect }
+from "./ActionDemandMapper";
+
 import { reduceHumanState }
 from "./HumanStateReducer";
 
@@ -15,8 +18,13 @@ export function applyMovePhysics(
   const demand =
     extractActionDemand(move);
 
+  const effect =
+    mapDemandToEffect(
+      demand
+    );
+
   return reduceHumanState(
     state,
-    demand
+    effect
   );
 }

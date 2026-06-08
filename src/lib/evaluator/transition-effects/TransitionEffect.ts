@@ -6,4 +6,8 @@ export type TransitionEffect = {
   orientationDelta: number;
 
   orientationUncertaintyDelta: number;
+
+  continuityDelta: number;
+
+  velocityDelta: number;
 };
