@@ -9,36 +9,26 @@ export class MomentumEntropyMetric {
     transitions: Transition[]
   ): number {
     const buckets =
-      new Map<number, number>();
+      new Map<string, number>();
 
     for (
       const transition
       of transitions
     ) {
-      let delta = 0;
+      const continuity =
+        transition.after.momentum
+          .continuity;
 
-      if (
-        transition.before.grip
-          .leftContactCount !==
-        transition.after.grip
-          .leftContactCount
-      ) {
-        delta++;
-      }
+      const velocity =
+        transition.after.momentum
+          .velocity;
 
-      if (
-        transition.before.grip
-          .rightContactCount !==
-        transition.after.grip
-          .rightContactCount
-      ) {
-        delta++;
-      }
+      const bucket =
+        `${continuity.toFixed(1)}:${velocity.toFixed(1)}`;
 
       buckets.set(
-        delta,
-        (buckets.get(delta) ?? 0)
-          + 1
+        bucket,
+        (buckets.get(bucket) ?? 0) + 1
       );
     }
 
