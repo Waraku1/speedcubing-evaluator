@@ -15,17 +15,20 @@ export class OrientationEntropyMetric {
       const transition
       of transitions
     ) {
-      const certainty =
-        transition.after.orientation
-          .certainty;
+      const orientation =
+        transition.after.orientation;
 
       const bucket =
-        certainty.toFixed(1);
+        [
+          orientation.x.toFixed(1),
+          orientation.y.toFixed(1),
+          orientation.z.toFixed(1),
+          orientation.certainty.toFixed(1),
+        ].join(":");
 
       buckets.set(
         bucket,
-        (buckets.get(bucket) ?? 0)
-          + 1
+        (buckets.get(bucket) ?? 0) + 1
       );
     }
 
