@@ -33,8 +33,8 @@
     "solve:test": "tsx src/lib/generator/test-generator.ts"
   },
   "dependencies": {
-    "cubing": "^0.63.3",
     "cubejs": "^1.3.2",
+    "cubing": "^0.63.3",
     "next": "16.1.7",
     "onnxruntime-web": "^1.26.0",
     "path": "^0.12.7",
@@ -56,5 +56,21 @@
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^1.6.0"
-  }
+  },
+  "description": "This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Waraku1/speedcubing-evaluator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Waraku1/speedcubing-evaluator/issues"
+  },
+  "homepage": "https://github.com/Waraku1/speedcubing-evaluator#readme"
 }
