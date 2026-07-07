@@ -27,18 +27,14 @@ export function rgbToHsv(r: number, g: number, b: number): HSV {
  * (白は彩度Sが低い、それ以外は色相Hで分類)
  */
 export function classifyColorHSV(hsv: HSV): Color | null {
-  // 【白 (U) の調整】部屋の光が黄色っぽくても白と判定できるように彩度(s)の許容範囲を 0.25 -> 0.32 に拡大
-  if (hsv.s < 0.32 && hsv.v > 0.45) return "U"; 
-  
-  // 【暗すぎる場所 (影) の無視】
-  if (hsv.v < 0.15) return null; 
+  if (hsv.s < 0.25 || (hsv.s < 0.4 && hsv.v > 0.7)) return "U"; // 白
+  if (hsv.v < 0.2) return null; // 黒(影)は無視
 
-  // 【色相(H)による分類の調整】
-  if (hsv.h < 10 || hsv.h > 345) return "R";  // 赤 (より厳密に)
-  if (hsv.h >= 10 && hsv.h < 42) return "L";  // オレンジ (幅を広げた)
-  if (hsv.h >= 42 && hsv.h < 78) return "D";  // 黄色
-  if (hsv.h >= 78 && hsv.h < 165) return "F"; // 緑
-  if (hsv.h >= 165 && hsv.h < 255) return "B"; // 青
+  if (hsv.h < 15 || hsv.h > 340) return "R"; // 赤
+  if (hsv.h >= 15 && hsv.h < 45) return "L"; // 橙
+  if (hsv.h >= 45 && hsv.h < 80) return "D"; // 黄
+  if (hsv.h >= 80 && hsv.h < 170) return "F"; // 緑
+  if (hsv.h >= 170 && hsv.h < 260) return "B"; // 青
 
   return null;
 }
