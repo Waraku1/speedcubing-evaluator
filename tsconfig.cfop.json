@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/lib/cube/moves.ts",
+    "src/lib/cube/moves.test.ts",
+    "src/lib/cfop-solver/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
