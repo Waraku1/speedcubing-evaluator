@@ -1,126 +1,38 @@
 /**
- * cross.ts — CFOP Cross ソルバー
+ * cross.ts — complete optimal D-cross solver
  *
- * ホワイトクロス（D面の十字）を完成させる最短手順を
- * BFS（幅優先探索）で求める。
+ * Uses a compact 4-edge pattern database with exactly 190,080 reachable
+ * cross states. This is not a full-cube solver and never imports cubejs or
+ * complete-solver.ts.
  *
- * ── このファイルが担う役割 ────────────────────────────────────────
- *
- *   入力: スクランブル済みの CubeState（moves.ts の 54 文字列）
- *   出力: CrossResult
- *           .moves      → クロスを完成させる Move の配列（最短手順）
- *           .depth      → 手数
- *           .stateAfter → クロス完成後のキューブ状態
- *
- * ── 次のフェーズへの状態引き渡し ──────────────────────────────────
- *
- *  CFOP は 4 フェーズが連鎖する。各ソルバーは
- *  「前のフェーズが終わった状態」から探索を始める必要がある。
- *
- *    solveCross(初期状態)
- *      → CrossResult.stateAfter        ← クロス完成後の状態
- *              ↓ そのまま次に渡す
- *    solveF2L(crossResult.stateAfter)
- *      → F2LResult.stateAfter          ← F2L完成後の状態
- *              ↓ そのまま次に渡す
- *    solveOLL(f2lResult.stateAfter)
- *      → OLLResult.stateAfter          ← OLL完成後の状態
- *              ↓ そのまま次に渡す
- *    solvePLL(ollResult.stateAfter)
- *      → PLLResult.moves / PLLResult.stateAfter  ← 完全に解けた状態
- *
- *  cfopSolver.ts 側では:
- *    const solution = [
- *      ...crossResult.moves,
- *      ...f2lResult.moves,
- *      ...ollResult.moves,
- *      ...pllResult.moves,
- *    ];
- *  と結合するだけで完全な解法手順になる。
- *
- * ── 実装順序と出力順序は独立している ─────────────────────────────
- *
- *  このプロジェクトでは Cross → OLL/PLL → F2L の順で実装するが、
- *  これはあくまで「コードを書く順番」の話。
- *
- *  理由: F2L はコーナーとエッジの位置・向きの組み合わせが多く
- *        最も複雑なフェーズ。Cross と OLL/PLL を先に完成させると
- *        「Cross + (F2Lスキップ) + OLL + PLL」の形で
- *        部分的な動作確認が早期にできる。
- *        F2L にバグがあっても他フェーズと切り離して調査できる。
- *
- *  手順の出力順番は cfopSolver.ts が制御するため、
- *  実装順序に関わらず必ず Cross → F2L → OLL → PLL の順になる。
- *
- * ── BFS とは何か ──────────────────────────────────────────────────
- *
- *  BFS（Breadth-First Search / 幅優先探索）とは、
- *  「1手で到達できる全状態 → 2手で到達できる全状態 → …」と
- *  層（深さ）を順番に広げながら目標状態を探す方法。
- *
- *  ポイント:
- *  - 最初に目標が見つかった時点の手数が必ず最短になる。
- *  - DFS（深さ優先）と違い、遠回りの経路を先に調べることがない。
- *
- *  イメージ（深さ = 手数）:
- *
- *    深さ 0:  [初期状態]
- *    深さ 1:  [U を打った状態] [R を打った状態] … 18通り
- *    深さ 2:  深さ1 の各状態に 15手を追加 … 最大 270通り
- *    深さ 3:  さらに 15手を追加 … 最大 4,050通り
- *    …
- *    深さ 7:  クロスは必ずここまでに見つかる（理論的最大値）
- *
- * ── 枝刈り（探索の効率化） ────────────────────────────────────────
- *
- *  [1] visited Set（訪問済み管理）
- *      同じキューブ状態を 2 度探索しないよう、
- *      一度調べた CubeState（54文字列）を Set に記録する。
- *      これにより「別経路で同じ状態に到達」しても無視できる。
- *
- *  [2] 同一面の連続を排除
- *      直前の手と同じ面（例: R の直後に R, R', R2）を打っても
- *      等価な別の1手で表せるため重複になる。
- *      これを除外することで探索を 18手 → 15手 に削減できる。
- *
- *      例:  R → R  ≡  R2
- *           R → R' ≡  （何もしない）
- *           R → R2 ≡  R'
- *      → 直前と同じ面のムーブは全部スキップ
- *
- * ── ノード構造（メモリ最適化） ────────────────────────────────────
- *
- *  素朴な実装ではキューに { state, moves: Move[] } を積むが、
- *  深さ 7 になると moves 配列のコピーが大量発生してメモリを圧迫する。
- *
- *  本実装では「親ノードへの参照」方式を使う。
- *
- *    Node = {
- *      state  : CubeState   ← この時点のキューブ状態
- *      move   : Move | null ← この状態に至った1手（根は null）
- *      parent : Node | null ← 1つ前のノード（根は null）
- *      depth  : number      ← 現在の深さ（= 手数）
- *    }
- *
- *  目標発見後は parent を遡るだけで手順を再構成できる。
- *  配列コピーが一切不要なのでメモリ効率が大幅に向上する。
- *
- *    [再構成の流れ]
- *      goalNode → parent → parent → … → root
- *      手順を逆順に収集 → reverse() → 完成
+ * At runtime a PDB-guided depth-first search chooses a cross solution that:
+ *   - finishes the aligned D cross,
+ *   - uses at most 8 moves,
+ *   - does not increase the number of solved F2L slots.
  */
 
-import { applyMove, type Move } from "../cube/moves";
-import { isCrossSolved }        from "./detection";
-import type { CubeState }       from "../cube/moves";
+import {
+  applyMove,
+  type CubeState,
+  type Move,
+} from "../cube/moves";
 
-// ─── 定数 ────────────────────────────────────────────────────────────────────
+import {
+  EDGE_POSITIONS,
+  countSolvedF2LSlots,
+  isAlignedCrossSolved,
+  locateEdge,
+} from "./detection";
 
-/**
- * 使用する 18 手の全リスト。
- * moves.ts には全手リストが export されていないため、ここで定義する。
- */
-const ALL_MOVES: readonly Move[] = [
+export type CrossResult = {
+  moves: Move[];
+  depth: number;
+  stateAfter: CubeState;
+  pdbDistance: number;
+  searchedNodes: number;
+};
+
+const CROSS_MOVES: readonly Move[] = [
   "U", "U'", "U2",
   "R", "R'", "R2",
   "F", "F'", "F2",
@@ -129,187 +41,268 @@ const ALL_MOVES: readonly Move[] = [
   "B", "B'", "B2",
 ];
 
-/**
- * クロスの理論的最大手数は 8 手。
- * 安全のため 9 を上限にしておく（通常は 7 以内で解ける）。
- */
-const MAX_DEPTH = 9;
+const EDGE_STATE_COUNT = 24;
+const CROSS_KEY_SPACE = EDGE_STATE_COUNT ** 4;
+const REACHABLE_CROSS_STATES = 190_080;
+const CROSS_NODE_LIMIT = 250_000;
 
-// ─── 型定義 ───────────────────────────────────────────────────────────────────
+// DF, DR, DB, DL in solved positions and orientations.
+const CROSS_GOAL_CODES = [16, 18, 20, 22] as const;
 
-/**
- * BFS の探索ノード。
- * 親ノードへの参照を持つことで、発見後に手順を遡って再構成できる。
- */
-type SearchNode = {
-  /** この時点のキューブ状態 */
-  state: CubeState;
-  /** この状態に至るために打った1手（根ノードは null） */
-  move: Move | null;
-  /** 1つ前のノード（根ノードは null） */
-  parent: SearchNode | null;
-  /** ここまでの手数（= 深さ） */
-  depth: number;
-};
+let edgeTransitions: readonly Uint8Array[] | null = null;
+let crossDistances: Int8Array | null = null;
 
-/** solveCross が返す結果 */
-export type CrossResult = {
-  /** クロスを完成させる手順（最短）。すでに完成していれば空配列。 */
-  moves: Move[];
-  /** 手数 */
-  depth: number;
-  /**
-   * クロス完成後のキューブ状態。
-   * 次フェーズ（F2L）のソルバーにそのまま渡す。
-   *
-   * 正しい受け渡しの順序:
-   *   const cross = solveCross(scrambled);
-   *   const f2l   = solveF2L(cross.stateAfter);    // ← Crossの後はF2L
-   *   const oll   = solveOLL(f2l.stateAfter);      // ← F2Lの後にOLL
-   *   const pll   = solvePLL(oll.stateAfter);      // ← OLLの後にPLL
-   *
-   * ※ cross.stateAfter を直接 solveOLL に渡さないこと。
-   *    Cross完了後は中段4スロット（F2L）がまだ揃っていない。
-   */
-  stateAfter: CubeState;
-};
-
-// ─── 内部ヘルパー ─────────────────────────────────────────────────────────────
-
-/**
- * Move 文字列から「面名」を取り出す。
- *
- * "R"  → "R"
- * "R'" → "R"
- * "R2" → "R"
- *
- * 同一面の連続を検出するために使う。
- */
 function faceOf(move: Move): string {
   return move[0];
 }
 
-/**
- * 発見ノードから根ノードまで parent を遡り、
- * 手順の配列を再構成して返す。
- *
- * 遡り方:
- *   goalNode.move → parent.move → … → root（move === null）
- *   末端から根方向に収集するので最後に reverse() が必要。
- */
-function reconstructPath(node: SearchNode): Move[] {
-  const path: Move[] = [];
-  let current: SearchNode | null = node;
-
-  while (current !== null && current.move !== null) {
-    path.push(current.move);
-    current = current.parent;
-  }
-
-  // push した順は「最後の手 → 最初の手」なので逆順にする
-  path.reverse();
-  return path;
+function packCrossCodes(
+  df: number,
+  dr: number,
+  db: number,
+  dl: number,
+): number {
+  return ((df * 24 + dr) * 24 + db) * 24 + dl;
 }
 
-// ─── メイン ───────────────────────────────────────────────────────────────────
+function unpackCrossKey(key: number): [number, number, number, number] {
+  const dl = key % 24;
+  key = (key - dl) / 24;
 
-/**
- * ホワイトクロスを完成させる最短手順を BFS で求める。
- *
- * アルゴリズムの流れ:
- *   1. 初期状態をキューに積む
- *   2. キューの先頭ノードを取り出す
- *   3. クロスが完成していれば手順を再構成して返す
- *   4. MAX_DEPTH に達していれば次の手を探索しない（枝刈り）
- *   5. 18手 × 枝刈りで次状態を生成し、未訪問ならキューに積む
- *   6. キューが空になるまで繰り返す
- *
- * @param state - スクランブル済み CubeState（54文字列）
- * @returns CrossResult — moves に最短手順、depth に手数が入る
- * @throws スクランブルが不正でクロスが解けない場合（通常は起きない）
- */
-export function solveCross(state: CubeState): CrossResult {
+  const db = key % 24;
+  key = (key - db) / 24;
 
-  // ── ステップ1: すでにクロスが完成していれば即返す ─────────────────
-  if (isCrossSolved(state).solved) {
-    // クロスがすでに完成しているので状態は変化しない
-    return { moves: [], depth: 0, stateAfter: state };
-  }
+  const dr = key % 24;
+  const df = (key - dr) / 24;
 
-  // ── ステップ2: BFS の初期化 ───────────────────────────────────────
+  return [df, dr, db, dl];
+}
 
-  // 訪問済み状態を記録する Set。
-  // CubeState は 54 文字の文字列なのでそのまま格納できる。
-  const visited = new Set<string>();
-  visited.add(state);
+const CROSS_GOAL_KEY = packCrossCodes(...CROSS_GOAL_CODES);
 
-  // 根ノード（初期状態）
-  const rootNode: SearchNode = {
-    state,
-    move:   null,
-    parent: null,
-    depth:  0,
-  };
+function getCrossKey(state: CubeState): number {
+  return packCrossCodes(
+    locateEdge(state, "D", "F").code,
+    locateEdge(state, "D", "R").code,
+    locateEdge(state, "D", "B").code,
+    locateEdge(state, "D", "L").code,
+  );
+}
 
-  // BFS キュー。JavaScript の配列を使い、push で追加・shift で取り出す。
-  const queue: SearchNode[] = [rootNode];
+function buildEdgeTransitions(): readonly Uint8Array[] {
+  if (edgeTransitions !== null) return edgeTransitions;
 
-  // ── ステップ3: BFS メインループ ──────────────────────────────────
+  const tables = CROSS_MOVES.map(() => new Uint8Array(24));
 
-  while (queue.length > 0) {
+  for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
+    const move = CROSS_MOVES[moveIndex];
 
-    // キューの先頭を取り出す（= 最も浅い未探索ノード）
-    const current = queue.shift()!;
+    for (let code = 0; code < 24; code++) {
+      const position = Math.floor(code / 2);
+      const orientation = code % 2;
+      const [firstIndex, secondIndex] = EDGE_POSITIONS[position];
 
-    // ── ステップ4: 深さ上限に達したら次の手を追加しない ─────────
-    if (current.depth >= MAX_DEPTH) continue;
+      const marker = Array<string>(54).fill(".");
+      marker[firstIndex] = orientation === 0 ? "A" : "B";
+      marker[secondIndex] = orientation === 0 ? "B" : "A";
 
-    // ── ステップ5: 18手（枝刈り済み）を順番に試す ────────────────
-    for (const move of ALL_MOVES) {
+      const moved = applyMove(marker.join(""), move);
+      let nextCode = -1;
 
-      // 枝刈り: 直前と同じ面への操作はスキップする
-      // 例: 直前が "R" なら "R", "R'", "R2" はすべてスキップ
-      if (
-        current.move !== null &&
-        faceOf(move) === faceOf(current.move)
-      ) {
-        continue;
+      for (let nextPosition = 0; nextPosition < EDGE_POSITIONS.length; nextPosition++) {
+        const [a, b] = EDGE_POSITIONS[nextPosition];
+
+        if (moved[a] === "A" && moved[b] === "B") {
+          nextCode = nextPosition * 2;
+          break;
+        }
+
+        if (moved[a] === "B" && moved[b] === "A") {
+          nextCode = nextPosition * 2 + 1;
+          break;
+        }
       }
 
-      // この手を適用した新しいキューブ状態を計算
-      const nextState = applyMove(current.state, move);
-
-      // 訪問済みならスキップ（同じ状態を再探索しない）
-      if (visited.has(nextState)) continue;
-      visited.add(nextState);
-
-      // 新しいノードを作成（moves 配列のコピーは不要）
-      const nextNode: SearchNode = {
-        state:  nextState,
-        move,
-        parent: current,
-        depth:  current.depth + 1,
-      };
-
-      // ── ステップ6: クロス完成チェック ────────────────────────
-      if (isCrossSolved(nextState).solved) {
-        // 親を遡って手順を再構成して返す
-        const moves = reconstructPath(nextNode);
-        return {
-          moves,
-          depth:      moves.length,
-          stateAfter: nextState,   // ← クロス完成時点の状態を保持
-        };
+      if (nextCode < 0) {
+        throw new Error(`[solveCross] failed to build edge transition for ${move}/${code}`);
       }
 
-      // 未完成ならキューに追加して次の深さで探索
-      queue.push(nextNode);
+      tables[moveIndex][code] = nextCode;
     }
   }
 
-  // ── ここに到達するのは不正なキューブ状態のみ ──────────────────────
-  throw new Error(
-    `[solveCross] クロスを解く手順が見つかりませんでした。` +
-    `スクランブルが正しい CubeState であるか確認してください。`
+  edgeTransitions = tables;
+  return tables;
+}
+
+function moveCrossKey(key: number, moveIndex: number): number {
+  const transitions = buildEdgeTransitions()[moveIndex];
+  const [df, dr, db, dl] = unpackCrossKey(key);
+
+  return packCrossCodes(
+    transitions[df],
+    transitions[dr],
+    transitions[db],
+    transitions[dl],
   );
 }
+
+function buildCrossDistances(): Int8Array {
+  if (crossDistances !== null) return crossDistances;
+
+  const distances = new Int8Array(CROSS_KEY_SPACE);
+  distances.fill(-1);
+
+  const queue = new Int32Array(REACHABLE_CROSS_STATES);
+  let head = 0;
+  let tail = 0;
+
+  queue[tail++] = CROSS_GOAL_KEY;
+  distances[CROSS_GOAL_KEY] = 0;
+
+  while (head < tail) {
+    const key = queue[head++];
+    const nextDistance = distances[key] + 1;
+
+    for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
+      const nextKey = moveCrossKey(key, moveIndex);
+
+      if (distances[nextKey] !== -1) continue;
+
+      distances[nextKey] = nextDistance;
+      queue[tail++] = nextKey;
+    }
+  }
+
+  if (tail !== REACHABLE_CROSS_STATES) {
+    throw new Error(
+      `[solveCross] cross PDB size mismatch: expected ${REACHABLE_CROSS_STATES}, got ${tail}`,
+    );
+  }
+
+  crossDistances = distances;
+  return distances;
+}
+
+function isPhaseSafeCrossGoal(
+  before: CubeState,
+  candidate: CubeState,
+): boolean {
+  if (!isAlignedCrossSolved(candidate).solved) return false;
+
+  return countSolvedF2LSlots(candidate) <= countSolvedF2LSlots(before);
+}
+
+export function solveCross(
+  state: CubeState,
+  maxDepth = 8,
+): CrossResult {
+  if (isAlignedCrossSolved(state).solved) {
+    return {
+      moves: [],
+      depth: 0,
+      stateAfter: state,
+      pdbDistance: 0,
+      searchedNodes: 0,
+    };
+  }
+
+  const distances = buildCrossDistances();
+  const startKey = getCrossKey(state);
+  const lowerBound = distances[startKey];
+
+  if (lowerBound < 0) {
+    throw new Error(`[solveCross] invalid physical cross state`);
+  }
+
+  if (lowerBound > maxDepth) {
+    throw new Error(
+      `[solveCross] cross requires at least ${lowerBound} moves, above maxDepth=${maxDepth}`,
+    );
+  }
+
+  let searchedNodes = 0;
+  const path: Move[] = [];
+  let solutionState: CubeState | null = null;
+
+  function dfs(
+    currentState: CubeState,
+    currentKey: number,
+    remaining: number,
+    lastFace: string | null,
+  ): boolean {
+    searchedNodes++;
+
+    if (searchedNodes > CROSS_NODE_LIMIT) {
+      throw new Error(
+        `[solveCross] node limit exceeded: ${CROSS_NODE_LIMIT}`,
+      );
+    }
+
+    const minimumRemaining = distances[currentKey];
+    if (minimumRemaining < 0 || minimumRemaining > remaining) return false;
+
+    if (remaining === 0) {
+      if (currentKey !== CROSS_GOAL_KEY) return false;
+      if (!isPhaseSafeCrossGoal(state, currentState)) return false;
+
+      solutionState = currentState;
+      return true;
+    }
+
+    for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
+      const move = CROSS_MOVES[moveIndex];
+      const face = faceOf(move);
+
+      if (face === lastFace) continue;
+
+      const nextKey = moveCrossKey(currentKey, moveIndex);
+      if (distances[nextKey] > remaining - 1) continue;
+
+      const nextState = applyMove(currentState, move);
+      path.push(move);
+
+      if (dfs(nextState, nextKey, remaining - 1, face)) return true;
+
+      path.pop();
+    }
+
+    return false;
+  }
+
+  for (let depth = lowerBound; depth <= maxDepth; depth++) {
+    path.length = 0;
+
+    if (dfs(state, startKey, depth, null)) {
+      if (solutionState === null) {
+        throw new Error(`[solveCross] internal solution-state error`);
+      }
+
+      return {
+        moves: [...path],
+        depth: path.length,
+        stateAfter: solutionState,
+        pdbDistance: lowerBound,
+        searchedNodes,
+      };
+    }
+  }
+
+  throw new Error(
+    `[solveCross] no phase-safe aligned cross found within ${maxDepth} moves; ` +
+      `pdbDistance=${lowerBound}, searchedNodes=${searchedNodes}`,
+  );
+}
+
+export function getCrossPatternDatabaseSize(): number {
+  const distances = buildCrossDistances();
+  let count = 0;
+
+  for (const distance of distances) {
+    if (distance >= 0) count++;
+  }
+
+  return count;
+}
+
+export const registeredCrossMoves = CROSS_MOVES;

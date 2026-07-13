@@ -1,253 +1,344 @@
 /**
- * detection.ts — CFOP 各フェーズの「完了判定」関数群
+ * detection.ts — physical cubie-aware CFOP phase detection
  *
- * 前提: moves.ts の文字列ベース CubeState (54文字) を使用する。
- *
- * ── スティッカー番号早見表 ──────────────────────────────────────
- *
- *  面の並び順:  U(0-8)  R(9-17)  F(18-26)  D(27-35)  L(36-44)  B(45-53)
- *
- *  各面は外側から見たときの row-major 配置:
- *      0 1 2
- *      3 4 5
- *      6 7 8
- *  → 実際のインデックス = face_start + offset
- *
- *            ┌──────────┐
- *            │  0  1  2 │  U面
- *            │  3  4  5 │
- *            │  6  7  8 │
- * ┌──────────┼──────────┼──────────┬──────────┐
- * │ 36 37 38 │ 18 19 20 │  9 10 11 │ 45 46 47 │  ← L / F / R / B（横展開）
- * │ 39 40 41 │ 21 22 23 │ 12 13 14 │ 48 49 50 │
- * │ 42 43 44 │ 24 25 26 │ 15 16 17 │ 51 52 53 │  ← ※ B面は後ろから見た配置
- * └──────────┼──────────┼──────────┴──────────┘
- *            │ 27 28 29 │  D面
- *            │ 30 31 32 │
- *            │ 33 34 35 │
- *            └──────────┘
- *
- * ── Cross (白クロス) エッジ対応 ────────────────────────────────────
- *
- *  D面の十字エッジと隣接面エッジの対:
- *    D[1]=28 ↔ F[7]=25   (D-F エッジ)
- *    D[3]=30 ↔ L[7]=43   (D-L エッジ)
- *    D[5]=32 ↔ R[7]=16   (D-R エッジ)
- *    D[7]=34 ↔ B[7]=52   (D-B エッジ)
- *
- * ── F2L 4スロット ────────────────────────────────────────────────
- *
- *  スロット FR:  コーナー 26(F) 15(R) 29(D)  エッジ 23(F) 12(R)
- *  スロット FL:  コーナー 24(F) 44(L) 27(D)  エッジ 21(F) 41(L)
- *  スロット BR:  コーナー 51(B) 17(R) 35(D)  エッジ 48(B) 14(R)
- *  スロット BL:  コーナー 53(B) 42(L) 33(D)  エッジ 50(B) 39(L)
+ * Sticker layout:
+ *   U: 0-8, R: 9-17, F: 18-26,
+ *   D: 27-35, L: 36-44, B: 45-53.
  */
 
-import type { CubeState } from "../cube/moves";
+import {
+  SOLVED_STATE,
+  type CubeState,
+} from "../cube/moves";
 
-// ─── 型定義 ───────────────────────────────────────────────────────────────────
-
-/** F2L の 4 スロット名 */
 export type F2LSlot = "FR" | "FL" | "BR" | "BL";
 
-/** isCrossSolved / isF2LSolved などが返す詳細情報 */
 export type PhaseStatus = {
-  /** そのフェーズが完了しているか */
   solved: boolean;
-  /** 未完了のスロットや面の名前（デバッグ用） */
   unsolved: string[];
 };
 
-// ─── 内部ヘルパー ─────────────────────────────────────────────────────────────
+export type F2LSlotStatus = {
+  slot: F2LSlot;
+  solved: boolean;
+  wrongStickers: Array<{
+    index: number;
+    expected: string;
+    actual: string;
+  }>;
+};
+
+export type EdgeLocation = {
+  position: number;
+  orientation: 0 | 1;
+  code: number;
+};
+
+export type CornerLocation = {
+  position: number;
+  orientation: 0 | 1 | 2;
+  code: number;
+};
+
+export const ALL_F2L_SLOTS: readonly F2LSlot[] = ["FR", "FL", "BR", "BL"];
 
 /**
- * 54 文字の state 文字列から 1 文字を取り出す。
- * インデックスが範囲外のときは空文字を返す（実行時エラー防止）。
+ * Edge position order:
+ *   UF, UR, UB, UL,
+ *   FR, FL, BR, BL,
+ *   DF, DR, DB, DL.
  */
-function at(state: CubeState, index: number): string {
-  return state[index] ?? "";
-}
-
-// ─── Cross 判定 ───────────────────────────────────────────────────────────────
-
-/**
- * D-F エッジ・D-L エッジ・D-R エッジ・D-B エッジの
- * ペア情報を定数として定義する。
- *
- * 各エントリは [D面側インデックス, 隣接面側インデックス, 隣接面の色] の順。
- * 隣接面の色は「その面のセンター色 = 面名そのもの」と一致する必要がある。
- */
-const CROSS_EDGE_PAIRS: ReadonlyArray<[number, number, string]> = [
-  [28, 25, "F"], // D-F エッジ: D[1] ↔ F[7]
-  [30, 43, "L"], // D-L エッジ: D[3] ↔ L[7]
-  [32, 16, "R"], // D-R エッジ: D[5] ↔ R[7]
-  [34, 52, "B"], // D-B エッジ: D[7] ↔ B[7]
+export const EDGE_POSITIONS: readonly (readonly [number, number])[] = [
+  [7, 19], [5, 10], [1, 46], [3, 37],
+  [23, 12], [21, 41], [48, 14], [50, 39],
+  [28, 25], [32, 16], [34, 52], [30, 43],
 ];
 
 /**
- * ホワイトクロス（D 面の十字）が完成しているかを判定する。
- *
- * 完成条件:
- *   1. D 面のエッジ 4 マス (28, 30, 32, 34) が全て "D"（＝白）
- *   2. 隣接する 4 面のエッジが各面のセンター色と一致している
- *
- * @returns PhaseStatus — solved が true なら完成。unsolved に未完了エッジ名が入る。
+ * Corner position order:
+ *   UFR, UFL, UBR, UBL,
+ *   DFR, DFL, DBR, DBL.
  */
-export function isCrossSolved(state: CubeState): PhaseStatus {
-  const unsolved: string[] = [];
+export const CORNER_POSITIONS: readonly (readonly [number, number, number])[] = [
+  [8, 9, 20], [6, 18, 38], [2, 11, 45], [0, 36, 47],
+  [29, 15, 26], [27, 24, 44], [35, 17, 51], [33, 42, 53],
+];
 
-  for (const [dIdx, adjIdx, adjColor] of CROSS_EDGE_PAIRS) {
-    const dOk  = at(state, dIdx) === "D";
-    const adjOk = at(state, adjIdx) === adjColor;
-    if (!dOk || !adjOk) {
-      unsolved.push(`D-${adjColor}`);
-    }
-  }
+const TOP_EDGE_POSITIONS = EDGE_POSITIONS.slice(0, 4);
+const TOP_CORNER_POSITIONS = CORNER_POSITIONS.slice(0, 4);
 
-  return { solved: unsolved.length === 0, unsolved };
-}
+const CROSS_STICKERS: ReadonlyArray<{
+  name: string;
+  stickers: ReadonlyArray<readonly [number, string]>;
+}> = [
+  { name: "D-F", stickers: [[28, "D"], [25, "F"]] },
+  { name: "D-R", stickers: [[32, "D"], [16, "R"]] },
+  { name: "D-B", stickers: [[34, "D"], [52, "B"]] },
+  { name: "D-L", stickers: [[30, "D"], [43, "L"]] },
+];
 
-// ─── F2L 判定 ─────────────────────────────────────────────────────────────────
-
-/**
- * F2L 各スロットのコーナー・エッジ インデックスと
- * それぞれが取るべき色を定義する。
- *
- * コーナーは 3 面分、エッジは 2 面分あり、
- * [インデックス, 期待色] のペア配列として表現する。
- */
-const F2L_SLOTS: Readonly<
-  Record<F2LSlot, ReadonlyArray<[number, string]>>
-> = {
+const F2L_STICKERS: Readonly<Record<F2LSlot, ReadonlyArray<readonly [number, string]>>> = {
   FR: [
-    // コーナー（DFR）
-    [26, "F"], [15, "R"], [29, "D"],
-    // エッジ（FR 中段）
+    [29, "D"], [26, "F"], [15, "R"],
     [23, "F"], [12, "R"],
   ],
   FL: [
-    // コーナー（DFL）
-    [24, "F"], [44, "L"], [27, "D"],
-    // エッジ（FL 中段）
+    [27, "D"], [24, "F"], [44, "L"],
     [21, "F"], [41, "L"],
   ],
   BR: [
-    // コーナー（DBR）
-    [51, "B"], [17, "R"], [35, "D"],
-    // エッジ（BR 中段）
+    [35, "D"], [51, "B"], [17, "R"],
     [48, "B"], [14, "R"],
   ],
   BL: [
-    // コーナー（DBL）
-    [53, "B"], [42, "L"], [33, "D"],
-    // エッジ（BL 中段）
+    [33, "D"], [53, "B"], [42, "L"],
     [50, "B"], [39, "L"],
   ],
 };
 
-/**
- * 指定した F2L スロットが完成しているかを判定する。
- *
- * 完成条件: そのスロットのコーナー 3 マスとエッジ 2 マスが
- *           すべて期待する色と一致していること。
- *
- * @param slot - "FR" | "FL" | "BR" | "BL"
- */
-export function isF2LSlotSolved(
+const F2L_PIECES: Readonly<Record<F2LSlot, {
+  corner: readonly [string, string, string];
+  edge: readonly [string, string];
+}>> = {
+  FR: { corner: ["D", "F", "R"], edge: ["F", "R"] },
+  FL: { corner: ["D", "F", "L"], edge: ["F", "L"] },
+  BR: { corner: ["D", "B", "R"], edge: ["B", "R"] },
+  BL: { corner: ["D", "B", "L"], edge: ["B", "L"] },
+};
+
+function at(state: CubeState, index: number): string {
+  return state[index] ?? "";
+}
+
+function makeStatus(unsolved: string[]): PhaseStatus {
+  return {
+    solved: unsolved.length === 0,
+    unsolved,
+  };
+}
+
+function hasSameColors(actual: readonly string[], expected: readonly string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  const left = [...actual].sort().join("");
+  const right = [...expected].sort().join("");
+  return left === right;
+}
+
+export function locateEdge(
   state: CubeState,
-  slot: F2LSlot
-): boolean {
-  return F2L_SLOTS[slot].every(
-    ([idx, expectedColor]) => at(state, idx) === expectedColor
+  firstColor: string,
+  secondColor: string,
+): EdgeLocation {
+  for (let position = 0; position < EDGE_POSITIONS.length; position++) {
+    const [a, b] = EDGE_POSITIONS[position];
+    const first = at(state, a);
+    const second = at(state, b);
+
+    if (first === firstColor && second === secondColor) {
+      return {
+        position,
+        orientation: 0,
+        code: position * 2,
+      };
+    }
+
+    if (first === secondColor && second === firstColor) {
+      return {
+        position,
+        orientation: 1,
+        code: position * 2 + 1,
+      };
+    }
+  }
+
+  throw new Error(
+    `[detection] edge ${firstColor}${secondColor} was not found in a physical position`,
   );
 }
 
 /**
- * F2L の 4 スロット全体の完成状況を返す。
- *
- * @returns PhaseStatus — solved が true なら 4 スロット全完成。
- *                        unsolved に未完了スロット名の配列が入る。
+ * The first color is the orientation reference color.
+ * For F2L corners this is D; for last-layer corners this is U.
  */
-export function isF2LSolved(state: CubeState): PhaseStatus {
+export function locateCorner(
+  state: CubeState,
+  colors: readonly [string, string, string],
+): CornerLocation {
+  for (let position = 0; position < CORNER_POSITIONS.length; position++) {
+    const indices = CORNER_POSITIONS[position];
+    const actual = indices.map((index) => at(state, index));
+
+    if (!hasSameColors(actual, colors)) continue;
+
+    const orientation = actual.indexOf(colors[0]);
+    if (orientation < 0 || orientation > 2) {
+      throw new Error(`[detection] invalid corner orientation for ${colors.join("")}`);
+    }
+
+    return {
+      position,
+      orientation: orientation as 0 | 1 | 2,
+      code: position * 3 + orientation,
+    };
+  }
+
+  throw new Error(
+    `[detection] corner ${colors.join("")} was not found in a physical position`,
+  );
+}
+
+export function isCrossSolved(state: CubeState): PhaseStatus {
   const unsolved: string[] = [];
 
-  for (const slot of ["FR", "FL", "BR", "BL"] as const) {
-    if (!isF2LSlotSolved(state, slot)) {
-      unsolved.push(slot);
+  for (const index of [28, 30, 32, 34]) {
+    if (at(state, index) !== "D") unsolved.push(`D-cross-${index}`);
+  }
+
+  return makeStatus(unsolved);
+}
+
+export function isAlignedCrossSolved(state: CubeState): PhaseStatus {
+  const unsolved: string[] = [];
+
+  for (const edge of CROSS_STICKERS) {
+    const solved = edge.stickers.every(
+      ([index, expected]) => at(state, index) === expected,
+    );
+
+    if (!solved) unsolved.push(edge.name);
+  }
+
+  return makeStatus(unsolved);
+}
+
+export function getF2LSlotStatus(
+  state: CubeState,
+  slot: F2LSlot,
+): F2LSlotStatus {
+  const wrongStickers: F2LSlotStatus["wrongStickers"] = [];
+
+  for (const [index, expected] of F2L_STICKERS[slot]) {
+    const actual = at(state, index);
+    if (actual !== expected) {
+      wrongStickers.push({ index, expected, actual });
     }
   }
 
-  return { solved: unsolved.length === 0, unsolved };
+  return {
+    slot,
+    solved: wrongStickers.length === 0,
+    wrongStickers,
+  };
 }
 
-// ─── OLL 判定 ─────────────────────────────────────────────────────────────────
+export function isF2LSlotSolved(state: CubeState, slot: F2LSlot): boolean {
+  return getF2LSlotStatus(state, slot).solved;
+}
 
-/**
- * OLL（Orientation of Last Layer）が完成しているかを判定する。
- *
- * 完成条件: U 面の 9 マス（インデックス 0〜8）が全て "U"（＝黄色）
- *
- * OLL では側面の色は問わない。
- * 上面の向きだけが揃っていれば OK。
- */
+export function getUnsolvedF2LSlots(state: CubeState): F2LSlot[] {
+  return ALL_F2L_SLOTS.filter((slot) => !isF2LSlotSolved(state, slot));
+}
+
+export function countSolvedF2LSlots(state: CubeState): number {
+  return ALL_F2L_SLOTS.length - getUnsolvedF2LSlots(state).length;
+}
+
+export function getF2LSolvedMask(state: CubeState): number {
+  return ALL_F2L_SLOTS.reduce(
+    (mask, slot, index) => mask | (isF2LSlotSolved(state, slot) ? 1 << index : 0),
+    0,
+  );
+}
+
+export function getF2LPairKey(state: CubeState, slot: F2LSlot): number {
+  const pieces = F2L_PIECES[slot];
+  const corner = locateCorner(state, pieces.corner);
+  const edge = locateEdge(state, pieces.edge[0], pieces.edge[1]);
+
+  return corner.code * 24 + edge.code;
+}
+
+export function isF2LSolved(state: CubeState): PhaseStatus {
+  return makeStatus(getUnsolvedF2LSlots(state));
+}
+
 export function isOLLSolved(state: CubeState): boolean {
-  for (let i = 0; i < 9; i++) {
-    if (at(state, i) !== "U") return false;
+  for (let index = 0; index < 9; index++) {
+    if (at(state, index) !== "U") return false;
   }
   return true;
 }
-
-// ─── PLL 判定 ─────────────────────────────────────────────────────────────────
-
-/**
- * PLL（Permutation of Last Layer）が完成しているかを判定する。
- *
- * PLL が完成 = キューブ全体が完成している。
- * （OLL 完了後に PLL を行うので、全面一致が完成の証明になる）
- *
- * 完成条件: 54 文字の state が SOLVED_STATE と一致すること。
- *
- * SOLVED_STATE = "UUUUUUUUURRRRRRRRR" +
- *                "FFFFFFFFF" +
- *                "DDDDDDDDD" +
- *                "LLLLLLLLL" +
- *                "BBBBBBBBB"
- */
-const SOLVED_STATE =
-  "UUUUUUUUU" +
-  "RRRRRRRRR" +
-  "FFFFFFFFF" +
-  "DDDDDDDDD" +
-  "LLLLLLLLL" +
-  "BBBBBBBBB";
 
 export function isPLLSolved(state: CubeState): boolean {
   return state === SOLVED_STATE;
 }
 
-// ─── CFOP 全体サマリー ────────────────────────────────────────────────────────
+/**
+ * Full last-layer orientation key.
+ *
+ * Edge digits:
+ *   0 = U sticker is on U face
+ *   1 = U sticker is on the side face
+ *   x = the top position does not currently contain a U-layer edge
+ *
+ * Corner digits:
+ *   0/1/2 = index of the U sticker inside the corner-position tuple
+ *   x = the top position does not currently contain a U-layer corner
+ *
+ * Once F2L is solved, this key has exactly 216 physically reachable values.
+ */
+export function getOLLKey(state: CubeState): string {
+  const edges = TOP_EDGE_POSITIONS.map(([a, b]) => {
+    if (at(state, a) === "U") return "0";
+    if (at(state, b) === "U") return "1";
+    return "x";
+  }).join("");
+
+  const corners = TOP_CORNER_POSITIONS.map((indices) => {
+    const orientation = indices.findIndex((index) => at(state, index) === "U");
+    return orientation < 0 ? "x" : String(orientation);
+  }).join("");
+
+  return `E${edges}-C${corners}`;
+}
 
 /**
- * CFOP の進捗を 4 フェーズまとめて返すユーティリティ。
- * 主にデバッグや UI 表示に使う。
- *
- * @returns 各フェーズの完了フラグと未完了情報をまとめたオブジェクト
- *
- * @example
- * const progress = getCFOPProgress(state);
- * console.log(progress.cross.solved);   // true / false
- * console.log(progress.f2l.unsolved);   // ["BR", "BL"] など
+ * With OLL solved, the U face is fixed and the four side top rows uniquely
+ * determine one of the 288 PLL states.
  */
+export function getPLLKey(state: CubeState): string {
+  const indices = [
+    9, 10, 11,
+    18, 19, 20,
+    36, 37, 38,
+    45, 46, 47,
+  ];
+
+  return indices.map((index) => at(state, index)).join("");
+}
+
+export function getStateKey(state: CubeState): string {
+  return state;
+}
+
 export function getCFOPProgress(state: CubeState): {
   cross: PhaseStatus;
-  f2l:   PhaseStatus;
-  oll:   { solved: boolean };
-  pll:   { solved: boolean };
+  alignedCross: PhaseStatus;
+  f2l: PhaseStatus;
+  oll: { solved: boolean; key: string };
+  pll: { solved: boolean; key: string };
 } {
   return {
     cross: isCrossSolved(state),
-    f2l:   isF2LSolved(state),
-    oll:   { solved: isOLLSolved(state) },
-    pll:   { solved: isPLLSolved(state) },
+    alignedCross: isAlignedCrossSolved(state),
+    f2l: isF2LSolved(state),
+    oll: {
+      solved: isOLLSolved(state),
+      key: getOLLKey(state),
+    },
+    pll: {
+      solved: isPLLSolved(state),
+      key: getPLLKey(state),
+    },
   };
 }
