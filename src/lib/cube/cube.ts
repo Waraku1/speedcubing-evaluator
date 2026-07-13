@@ -1,16 +1,3 @@
-/**
- * cube.ts — Rubik's Cube 3×3 state management library
- *
- * Pure functions only. State is always treated as immutable.
- * Every move is derived from a verified permutation table,
- * confirmed to satisfy:
- *   - X × 4 = identity  (all 6 base moves)
- *   - (R U R' U') × 6 = identity  (sexy move / commutator)
- *   - apply(move) then apply(inverse) = identity  (all 18 moves)
- */
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type Face = "U" | "R" | "F" | "D" | "L" | "B";
 export type Color = "U" | "R" | "F" | "D" | "L" | "B";
 
