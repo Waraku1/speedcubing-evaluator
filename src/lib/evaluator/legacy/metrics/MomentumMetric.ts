@@ -1,5 +1,5 @@
-import { Metric } from "./Metric";
-import { Transition } from "../transition/Transition";
+import { Metric } from "../../metrics/Metric";
+import { Transition } from "../../transition/Transition";
 
 function distance(
   before: Transition["before"],

@@ -1,6 +1,6 @@
-import { Face } from "../../cube/cube";
-import { Metric } from "./Metric";
-import { Transition } from "../transition/Transition";
+import { Face } from "../../../cube/cube";
+import { Metric } from "../../metrics/Metric";
+import { Transition } from "../../transition/Transition";
 
 type Axis = "UD" | "RL" | "FB";
 
