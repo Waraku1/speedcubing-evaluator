@@ -1,6 +1,4 @@
-export type EvaluationResult = {
-  ergonomicsScore: number;
-
+export type EvaluationEvidence = {
   flowScore: number;
   gripScore: number;
   rotationScore: number;
