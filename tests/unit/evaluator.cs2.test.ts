@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { EvaluationProducer } from "../../src/lib/evaluator/evaluation/EvaluationProducer";
-import { EvaluatorPipeline } from "../../src/lib/evaluator/pipeline/EvaluatorPipeline";
+import { PrototypeEvaluatorPipeline } from "../../src/lib/evaluator/prototype/PrototypeEvaluatorPipeline";
 
 import { ErgonomicsInterpreter } from "../../src/lib/evaluator/interpretation/ErgonomicsInterpreter";
 import { FlowInterpreter } from "../../src/lib/evaluator/interpretation/FlowInterpreter";
@@ -257,7 +257,7 @@ describe("CS-2 evaluation responsibility separation", () => {
       createReachabilityModel();
 
     const pipeline =
-      new EvaluatorPipeline(
+      new PrototypeEvaluatorPipeline(
         reachabilityModel
       );
 
