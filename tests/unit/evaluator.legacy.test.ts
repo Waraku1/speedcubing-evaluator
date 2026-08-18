@@ -5,7 +5,7 @@ import {
   analyzeMovePatterns,
   type EvaluationResult,
   type MovePatternAnalysis,
-} from "../../src/lib/evaluator/evaluator";
+} from "../../src/lib/evaluator/legacy/evaluator";
 
 import type {
   CubeState,

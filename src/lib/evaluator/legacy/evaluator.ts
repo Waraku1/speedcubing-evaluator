@@ -5,7 +5,7 @@ import {
   applyMoves,
   cancelMoves,
   isSolvedState,
-} from "../cube/cube";
+} from "../../cube/cube";
 
 // ---------------------------------------------------------------------------
 // Evaluation Result Types
