@@ -1,5 +1,7 @@
 import { ErgonomicsInterpreter } from "../interpretation/ErgonomicsInterpreter";
 
+import { Evaluation } from "./Evaluation";
+
 export class EvaluationProducer {
   private readonly ergonomicsInterpreter:
     ErgonomicsInterpreter;
@@ -14,12 +16,15 @@ export class EvaluationProducer {
     gripScore: number,
     rotationScore: number,
     lookaheadScore: number
-  ): number {
-    return this.ergonomicsInterpreter.interpret(
-      flowScore,
-      gripScore,
-      rotationScore,
-      lookaheadScore
-    );
+  ): Evaluation {
+    return {
+      ergonomicsScore:
+        this.ergonomicsInterpreter.interpret(
+          flowScore,
+          gripScore,
+          rotationScore,
+          lookaheadScore
+        ),
+    };
   }
 }

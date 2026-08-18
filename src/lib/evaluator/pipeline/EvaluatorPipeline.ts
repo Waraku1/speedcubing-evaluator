@@ -1,6 +1,6 @@
 import { Transition } from "../transition/Transition";
 
-import { EvaluationResult } from "../types/EvaluationResult";
+import { EvaluatorPipelineResult } from "./EvaluatorPipelineResult";
 
 import { ReachabilityModel } from "../state-space/ReachabilityModel";
 
@@ -71,7 +71,7 @@ export class EvaluatorPipeline {
 
   evaluate(
     transitions: Transition[]
-  ): EvaluationResult {
+  ): EvaluatorPipelineResult {
     // --------------------------------------------------
     // Entropy Layer
     // --------------------------------------------------
@@ -125,7 +125,7 @@ export class EvaluatorPipeline {
     // Evaluation Layer
     // --------------------------------------------------
 
-    const ergonomicsScore =
+    const evaluation =
       this.evaluationProducer.evaluate(
         flowScore,
         gripScore,
@@ -134,39 +134,41 @@ export class EvaluatorPipeline {
       );
 
     // --------------------------------------------------
-    // Compatibility Result Envelope
+    // Pipeline Result Envelope
     // --------------------------------------------------
 
     return {
-      ergonomicsScore,
+      evaluation,
 
-      flowScore,
+      evidence: {
+        flowScore,
 
-      gripScore,
+        gripScore,
 
-      rotationScore,
+        rotationScore,
 
-      lookaheadScore,
+        lookaheadScore,
 
-      reachabilityEntropy,
+        reachabilityEntropy,
 
-      gripEntropy,
+        gripEntropy,
 
-      momentumEntropy,
+        momentumEntropy,
 
-      orientationEntropy,
+        orientationEntropy,
 
-      transitionCount:
-        transitions.length,
+        transitionCount:
+          transitions.length,
 
-      breakdown: {
-        flow: flowScore,
+        breakdown: {
+          flow: flowScore,
 
-        grip: gripScore,
+          grip: gripScore,
 
-        rotation: rotationScore,
+          rotation: rotationScore,
 
-        lookahead: lookaheadScore,
+          lookahead: lookaheadScore,
+        },
       },
     };
   }
