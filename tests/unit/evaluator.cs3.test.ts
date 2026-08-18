@@ -17,10 +17,22 @@ import { GripEntropyMetric } from "../../src/lib/evaluator/metrics/entropy/GripE
 import { MomentumEntropyMetric } from "../../src/lib/evaluator/metrics/entropy/MomentumEntropyMetric";
 import { OrientationEntropyMetric } from "../../src/lib/evaluator/metrics/entropy/OrientationEntropyMetric";
 
+import type { Evaluation } from "../../src/lib/evaluator/evaluation/Evaluation";
+import type { EvaluationEvidence } from "../../src/lib/evaluator/evidence/EvaluationEvidence";
 import type { ReachabilityModel } from "../../src/lib/evaluator/state-space/ReachabilityModel";
 import type { HumanState } from "../../src/lib/evaluator/state/HumanState";
 import type { Transition } from "../../src/lib/evaluator/transition/Transition";
-import type { EvaluatorPipelineResult } from "../../src/lib/evaluator/pipeline/EvaluatorPipelineResult";
+
+function readEvaluatorSource(relativePath: string): string {
+  return readFileSync(
+    path.resolve(
+      process.cwd(),
+      "src/lib/evaluator",
+      relativePath
+    ),
+    "utf8"
+  );
+}
 
 function createHumanState(seed: number): HumanState {
   return {
@@ -108,10 +120,10 @@ function createReachabilityModel(): ReachabilityModel {
   };
 }
 
-function evaluateWithExistingStages(
+function evaluateEvidenceWithExistingStages(
   transitions: Transition[],
   reachabilityModel: ReachabilityModel
-): EvaluatorPipelineResult {
+): EvaluationEvidence {
   const reachabilityEntropy =
     new ReachabilityEntropyMetric(
       reachabilityModel
@@ -153,67 +165,70 @@ function evaluateWithExistingStages(
       orientationEntropy
     );
 
-  const evaluation = {
-    ergonomicsScore:
-      new ErgonomicsInterpreter().interpret(
-        flowScore,
-        gripScore,
-        rotationScore,
-        lookaheadScore
-      ),
-  };
-
   return {
-    evaluation,
-    evidence: {
-      flowScore,
-      gripScore,
-      rotationScore,
-      lookaheadScore,
-      reachabilityEntropy,
-      gripEntropy,
-      momentumEntropy,
-      orientationEntropy,
-      transitionCount: transitions.length,
-      breakdown: {
-        flow: flowScore,
-        grip: gripScore,
-        rotation: rotationScore,
-        lookahead: lookaheadScore,
-      },
+    flowScore,
+    gripScore,
+    rotationScore,
+    lookaheadScore,
+    reachabilityEntropy,
+    gripEntropy,
+    momentumEntropy,
+    orientationEntropy,
+    transitionCount: transitions.length,
+    breakdown: {
+      flow: flowScore,
+      grip: gripScore,
+      rotation: rotationScore,
+      lookahead: lookaheadScore,
     },
   };
 }
 
-describe("CS-2 evaluation responsibility separation", () => {
+describe("CS-3 Evaluation and evidence separation", () => {
+  it("keeps Evaluation limited to ergonomicsScore", () => {
+    const semanticFieldContract:
+      Record<keyof Evaluation, true> = {
+        ergonomicsScore: true,
+      };
+
+    const evaluation: Evaluation =
+      new EvaluationProducer().evaluate(
+        0.8,
+        0.6,
+        0.2,
+        0.75
+      );
+
+    expect(Object.keys(evaluation)).toEqual(
+      Object.keys(semanticFieldContract)
+    );
+  });
+
   it.each([
     [1, 1, 0, 1],
     [0.8, 0.6, 0.2, 0.75],
     [0.25, 0.5, 0.9, 0.4],
     [0, 1, 0.5, 1],
   ])(
-    "preserves ErgonomicsInterpreter synthesis for Interpretation outputs",
+    "preserves the existing evaluation synthesis",
     (
       flowScore,
       gripScore,
       rotationScore,
       lookaheadScore
     ) => {
-      const producer =
-        new EvaluationProducer();
-
-      const interpreter =
-        new ErgonomicsInterpreter();
-
-      expect(
-        producer.evaluate(
+      const evaluation =
+        new EvaluationProducer().evaluate(
           flowScore,
           gripScore,
           rotationScore,
           lookaheadScore
-        ).ergonomicsScore
+        );
+
+      expect(
+        evaluation.ergonomicsScore
       ).toBe(
-        interpreter.interpret(
+        new ErgonomicsInterpreter().interpret(
           flowScore,
           gripScore,
           rotationScore,
@@ -223,16 +238,37 @@ describe("CS-2 evaluation responsibility separation", () => {
     }
   );
 
-  it("keeps EvaluationProducer free of upstream stage dependencies", () => {
-    const producerSource = readFileSync(
-      path.resolve(
-        process.cwd(),
-        "src/lib/evaluator/evaluation/EvaluationProducer.ts"
-      ),
-      "utf8"
+  it("preserves all existing non-Evaluation values as evidence", () => {
+    const transitions = createTransitions();
+    const reachabilityModel =
+      createReachabilityModel();
+
+    const result =
+      new EvaluatorPipeline(
+        reachabilityModel
+      ).evaluate(transitions);
+
+    expect(result.evidence).toEqual(
+      evaluateEvidenceWithExistingStages(
+        transitions,
+        reachabilityModel
+      )
     );
+  });
+
+  it("keeps Evaluation and its producer free of upstream and evidence dependencies", () => {
+    const evaluationSource =
+      readEvaluatorSource(
+        "evaluation/Evaluation.ts"
+      );
+
+    const producerSource =
+      readEvaluatorSource(
+        "evaluation/EvaluationProducer.ts"
+      );
 
     const forbiddenReferences = [
+      /EvaluationEvidence/,
       /Transition/,
       /HumanState/,
       /Demand/,
@@ -245,29 +281,36 @@ describe("CS-2 evaluation responsibility separation", () => {
     ];
 
     for (const reference of forbiddenReferences) {
+      expect(evaluationSource).not.toMatch(
+        reference
+      );
       expect(producerSource).not.toMatch(
         reference
       );
     }
   });
 
-  it("preserves the existing orchestration result", () => {
-    const transitions = createTransitions();
-    const reachabilityModel =
-      createReachabilityModel();
-
-    const pipeline =
+  it("returns only the Evaluation and evidence envelope", () => {
+    const result =
       new EvaluatorPipeline(
-        reachabilityModel
-      );
+        createReachabilityModel()
+      ).evaluate(createTransitions());
 
     expect(
-      pipeline.evaluate(transitions)
-    ).toEqual(
-      evaluateWithExistingStages(
-        transitions,
-        reachabilityModel
-      )
+      Object.keys(result).sort()
+    ).toEqual([
+      "evaluation",
+      "evidence",
+    ]);
+
+    expect(result).not.toHaveProperty(
+      "ergonomicsScore"
+    );
+    expect(result).not.toHaveProperty(
+      "flowScore"
+    );
+    expect(result).not.toHaveProperty(
+      "reachabilityEntropy"
     );
   });
 });
