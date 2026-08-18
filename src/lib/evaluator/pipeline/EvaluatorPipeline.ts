@@ -1,5 +1,3 @@
-// aggregation/EvaluationAggregator.ts
-
 import { Transition } from "../transition/Transition";
 
 import { EvaluationResult } from "../types/EvaluationResult";
@@ -16,9 +14,10 @@ import { FlowInterpreter } from "../interpretation/FlowInterpreter";
 import { GripInterpreter } from "../interpretation/GripInterpreter";
 import { LookaheadInterpreter } from "../interpretation/LookaheadInterpreter";
 import { RotationBurdenInterpreter } from "../interpretation/RotationBurdenInterpreter";
-import { ErgonomicsInterpreter } from "../interpretation/ErgonomicsInterpreter";
 
-export class EvaluationAggregator {
+import { EvaluationProducer } from "../evaluation/EvaluationProducer";
+
+export class EvaluatorPipeline {
   private readonly reachabilityEntropyMetric: ReachabilityEntropyMetric;
 
   private readonly gripEntropyMetric: GripEntropyMetric;
@@ -35,7 +34,7 @@ export class EvaluationAggregator {
 
   private readonly rotationBurdenInterpreter: RotationBurdenInterpreter;
 
-  private readonly ergonomicsInterpreter: ErgonomicsInterpreter;
+  private readonly evaluationProducer: EvaluationProducer;
 
   constructor(
     reachabilityModel: ReachabilityModel
@@ -66,8 +65,8 @@ export class EvaluationAggregator {
     this.rotationBurdenInterpreter =
       new RotationBurdenInterpreter();
 
-    this.ergonomicsInterpreter =
-      new ErgonomicsInterpreter();
+    this.evaluationProducer =
+      new EvaluationProducer();
   }
 
   evaluate(
@@ -123,11 +122,11 @@ export class EvaluationAggregator {
       );
 
     // --------------------------------------------------
-    // Ergonomics Layer
+    // Evaluation Layer
     // --------------------------------------------------
 
     const ergonomicsScore =
-      this.ergonomicsInterpreter.interpret(
+      this.evaluationProducer.evaluate(
         flowScore,
         gripScore,
         rotationScore,
@@ -135,7 +134,7 @@ export class EvaluationAggregator {
       );
 
     // --------------------------------------------------
-    // Result
+    // Compatibility Result Envelope
     // --------------------------------------------------
 
     return {
