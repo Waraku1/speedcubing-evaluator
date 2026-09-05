@@ -1,6 +1,6 @@
-import { DemandField } from "../demand/DemandField";
+import type { DomainDemandV1 } from "../demand/DomainDemandV1";
 import { TransitionDemandExtractor } from "../demand/TransitionDemandExtractor";
-import { Transition } from "../transition/Transition";
+import type { Transition } from "../transition/Transition";
 
 export class EvaluatorPipeline {
   private readonly transitionDemandExtractor:
@@ -12,15 +12,10 @@ export class EvaluatorPipeline {
   }
 
   advanceToDemand(
-    transitions: Transition[]
-  ): DemandField {
-    return {
-      vectors: transitions.map(
-        (transition) =>
-          this.transitionDemandExtractor.extract(
-            transition
-          )
-      ),
-    };
+    transitions: readonly Transition[]
+  ): DomainDemandV1 {
+    return this.transitionDemandExtractor.extract(
+      transitions
+    );
   }
 }
