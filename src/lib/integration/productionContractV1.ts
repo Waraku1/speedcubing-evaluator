@@ -1,187 +1,256 @@
-import type { Move as TransitionMove } from "../cube/cube";
+import type {
+  TransitionTraceV1,
+} from "../../types/evaluate-v1";
+import type {
+  CubeFaceletStateV1,
+  SolverResultV1,
+} from "../../types/solver-v1";
+import { applyMove, type Move } from "../cube/moves";
+import { createCubeFaceletStateV1 } from "../cube/cubeStateV1";
+import type { DomainDemandV1 } from "../evaluator/demand/DomainDemandV1";
 import {
-  DOMAIN_DEMAND_VALIDITY_STATUSES,
-  type DomainDemandV1,
-} from "../evaluator/demand/DomainDemandV1";
-import {
-  canonicalIdentityContent,
-  stableIdentity,
-} from "../evaluator/demand/StableIdentity";
-import type { HumanState } from "../evaluator/state/HumanState";
-import type { Transition } from "../evaluator/transition/Transition";
+  HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1,
+  UNOBSERVED_HUMAN_STATE_SOURCE_VERSION_ID_V1,
+} from "../evaluator/demand/DemandAdvanceInputV1";
+import { stableIdentity } from "../evaluator/demand/StableIdentity";
+import type { VerifiedSolutionV1 } from "../solver/solutionVerifierV1";
 import { EvaluateV1Error } from "./evaluateErrorsV1";
+import type { BuiltSolutionTraceV1 } from "./SolutionTraceBuilderV1";
 
-const FINGER_IDS = [
-  "L_THUMB",
-  "L_INDEX",
-  "L_MIDDLE",
-  "R_THUMB",
-  "R_INDEX",
-  "R_MIDDLE",
+const DOMAIN_KEYS = [
+  "architecture",
+  "artifactId",
+  "claimClass",
+  "executionEpisode",
+  "schemaId",
+  "schemaVersion",
+  "t1Plane",
+  "t2Plane",
 ] as const;
 
-const OBSERVATION_SCOPES = [
-  "GRIP_ENDPOINTS",
-  "FINGER_ENDPOINTS",
-  "ORIENTATION_CONFIGURATION_ENDPOINTS",
-  "ORIENTATION_CERTAINTY_QUARANTINE",
-  "CONTINUITY_ENDPOINTS",
-  "VELOCITY_QUARANTINE",
+const EPISODE_KEYS = [
+  "eventRecords",
+  "evidenceEdges",
+  "executionId",
+  "observationRecords",
+  "sourceVersionManifest",
+  "t3Consequences",
+  "transitionRefs",
+  "windowRecords",
+] as const;
+
+const TRACE_KEYS = [
+  "cubeStateBoundaries",
+  "executionId",
+  "humanStateObservationBoundaries",
+  "schemaId",
+  "schemaVersion",
+  "solutionId",
+  "solutionTraceId",
+  "solutionTransitions",
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+function hasExactKeys(
+  record: Record<string, unknown>,
+  keys: readonly string[]
+): boolean {
+  return (
+    Object.keys(record).sort().join("|") === [...keys].sort().join("|")
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-function isHumanState(value: unknown): value is HumanState {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  const { orientation, grip, fingers, momentum } = value;
-
-  if (
-    !isRecord(orientation) ||
-    !isRecord(grip) ||
-    !isRecord(fingers) ||
-    !isRecord(momentum)
-  ) {
-    return false;
-  }
-
-  const available = fingers.available;
-  const fatigue = fingers.fatigue;
-
-  if (!isRecord(available) || !isRecord(fatigue)) {
-    return false;
-  }
-
-  return (
-    [
-      orientation.x,
-      orientation.y,
-      orientation.z,
-      orientation.certainty,
-      grip.leftContactCount,
-      grip.rightContactCount,
-      fingers.coordination,
-      momentum.continuity,
-      momentum.velocity,
-      ...FINGER_IDS.map((fingerId) => fatigue[fingerId]),
-    ].every(isFiniteNumber) &&
-    [
-      grip.leftStabilizing,
-      grip.rightStabilizing,
-      ...FINGER_IDS.map((fingerId) => available[fingerId]),
-    ].every((field) => typeof field === "boolean")
-  );
-}
-
-export function assertTransitionTraceV1(
-  value: unknown,
-  initialState: HumanState,
-  moves: readonly TransitionMove[]
-): asserts value is Transition[] {
-  if (!Array.isArray(value) || value.length !== moves.length) {
-    throw new EvaluateV1Error("TRANSITION_FAILED");
-  }
-
-  let expectedBefore = canonicalIdentityContent(initialState);
-
-  for (let ordinal = 0; ordinal < value.length; ordinal += 1) {
-    const transition = value[ordinal];
-
-    if (
-      !isRecord(transition) ||
-      transition.move !== moves[ordinal] ||
-      !isHumanState(transition.before) ||
-      !isHumanState(transition.after) ||
-      canonicalIdentityContent(transition.before) !== expectedBefore
-    ) {
-      throw new EvaluateV1Error("TRANSITION_FAILED");
-    }
-
-    expectedBefore = canonicalIdentityContent(transition.after);
-  }
+function traceFailure(): never {
+  throw new EvaluateV1Error("TRANSITION_GENERATION_FAILED");
 }
 
 function demandFailure(): never {
   throw new EvaluateV1Error("DEMAND_CONTRACT_FAILED");
 }
 
-function arrayField(
-  record: Record<string, unknown>,
-  field: string
-): unknown[] {
-  const value = record[field];
-
-  if (!Array.isArray(value)) {
-    return demandFailure();
-  }
-
-  return value;
+function expectedSolutionId(
+  input: CubeFaceletStateV1,
+  solverResult: SolverResultV1,
+  verified: VerifiedSolutionV1
+): string {
+  return stableIdentity("solution", {
+    stateId: input.stateId,
+    engine: solverResult.engine,
+    solverRunId: solverResult.solverRunId,
+    cacheKeyVersion: solverResult.cache.keyVersion,
+    verifiedMoveTokens: verified.moves,
+  });
 }
 
-function isGovernedStatus(value: unknown): boolean {
-  if (!isRecord(value) || !isRecord(value.provenance)) {
-    return false;
-  }
-
-  return (
-    DOMAIN_DEMAND_VALIDITY_STATUSES.some(
-      (status) => status === value.status
-    ) &&
-    isNonEmptyString(value.reason) &&
-    isNonEmptyString(value.provenance.sourceVersionId)
-  );
-}
-
-function isJsonCompatible(
+export function assertSolutionTraceV1(
   value: unknown,
-  ancestors = new Set<object>()
-): boolean {
-  if (value === null) {
-    return true;
+  input: CubeFaceletStateV1,
+  solverResult: SolverResultV1,
+  verified: VerifiedSolutionV1
+): asserts value is BuiltSolutionTraceV1 {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, TRACE_KEYS) ||
+    value.schemaId !== "TransitionTraceV1" ||
+    value.schemaVersion !== "1.0" ||
+    value.solutionId !== expectedSolutionId(input, solverResult, verified) ||
+    !isNonEmptyString(value.solutionTraceId) ||
+    !isNonEmptyString(value.executionId) ||
+    !Array.isArray(value.cubeStateBoundaries) ||
+    !Array.isArray(value.solutionTransitions) ||
+    !Array.isArray(value.humanStateObservationBoundaries) ||
+    value.solutionTransitions.length !== verified.moves.length ||
+    value.cubeStateBoundaries.length !== verified.moves.length + 1 ||
+    value.humanStateObservationBoundaries.length !== verified.moves.length + 1
+  ) {
+    traceFailure();
   }
+
+  const cubeStateIds: string[] = [];
+  const cubeBoundaryIds: string[] = [];
+  let expectedFacelets = input.facelets;
+
+  value.cubeStateBoundaries.forEach((boundary, ordinal) => {
+    if (ordinal > 0) {
+      expectedFacelets = applyMove(
+        expectedFacelets,
+        verified.moves[ordinal - 1] as Move
+      );
+    }
+    const expectedState = createCubeFaceletStateV1(expectedFacelets);
+
+    if (
+      !isRecord(boundary) ||
+      !hasExactKeys(boundary, ["boundaryId", "format", "ordinal", "stateId"]) ||
+      boundary.ordinal !== ordinal ||
+      boundary.format !== "URFDLB_FACELETS_V1" ||
+      boundary.stateId !== expectedState.stateId ||
+      !isNonEmptyString(boundary.boundaryId) ||
+      boundary.boundaryId !==
+        stableIdentity("cube-state-boundary", {
+          solutionId: value.solutionId,
+          ordinal,
+          stateId: boundary.stateId,
+        })
+    ) {
+      traceFailure();
+    }
+
+    cubeStateIds.push(boundary.stateId);
+    cubeBoundaryIds.push(boundary.boundaryId);
+  });
 
   if (
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    isFiniteNumber(value)
+    cubeStateIds[0] !== input.stateId ||
+    new Set(cubeBoundaryIds).size !== cubeBoundaryIds.length
   ) {
-    return true;
+    traceFailure();
   }
 
-  if (typeof value !== "object") {
-    return false;
+  const solutionTransitionIds: string[] = [];
+
+  value.solutionTransitions.forEach((transition, ordinal) => {
+    if (
+      !isRecord(transition) ||
+      !hasExactKeys(transition, [
+        "afterCubeStateId",
+        "beforeCubeStateId",
+        "move",
+        "moveEventId",
+        "ordinal",
+        "transitionId",
+      ]) ||
+      transition.ordinal !== ordinal ||
+      transition.move !== verified.moves[ordinal] ||
+      transition.beforeCubeStateId !== cubeStateIds[ordinal] ||
+      transition.afterCubeStateId !== cubeStateIds[ordinal + 1] ||
+      transition.moveEventId !==
+        stableIdentity("solution-move-event", {
+          solutionId: value.solutionId,
+          ordinal,
+          move: transition.move,
+        }) ||
+      transition.transitionId !==
+        stableIdentity("solution-transition", {
+          solutionId: value.solutionId,
+          ordinal,
+          beforeCubeStateId: transition.beforeCubeStateId,
+          afterCubeStateId: transition.afterCubeStateId,
+          moveEventId: transition.moveEventId,
+        })
+    ) {
+      traceFailure();
+    }
+
+    solutionTransitionIds.push(transition.transitionId as string);
+  });
+
+  if (new Set(solutionTransitionIds).size !== solutionTransitionIds.length) {
+    traceFailure();
   }
 
-  if (ancestors.has(value)) {
-    return false;
+  const expectedSolutionTraceId = stableIdentity("solution-trace", {
+    solutionId: value.solutionId,
+    cubeBoundaryIds,
+    solutionTransitionIds,
+  });
+  const humanStateBoundaryIds: string[] = [];
+
+  value.humanStateObservationBoundaries.forEach((boundary, ordinal) => {
+    if (
+      !isRecord(boundary) ||
+      !hasExactKeys(boundary, [
+        "boundaryId",
+        "ordinal",
+        "reason",
+        "sourceVersionId",
+        "status",
+      ]) ||
+      boundary.ordinal !== ordinal ||
+      boundary.status !== "NOT_OBSERVED" ||
+      boundary.reason !== HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1 ||
+      boundary.sourceVersionId !==
+        UNOBSERVED_HUMAN_STATE_SOURCE_VERSION_ID_V1 ||
+      boundary.boundaryId !==
+        stableIdentity("human-state-observation-boundary", {
+          solutionTraceId: expectedSolutionTraceId,
+          ordinal,
+          status: "NOT_OBSERVED",
+          reason: HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1,
+          sourceVersionId: UNOBSERVED_HUMAN_STATE_SOURCE_VERSION_ID_V1,
+        })
+    ) {
+      traceFailure();
+    }
+
+    humanStateBoundaryIds.push(boundary.boundaryId as string);
+  });
+
+  const expectedExecutionId = stableIdentity("execution", {
+    kind: "UNOBSERVED_HUMAN_STATE",
+    solutionTraceId: expectedSolutionTraceId,
+    solutionTransitionIds,
+    humanStateBoundaryIds,
+  });
+
+  if (
+    value.solutionTraceId !== expectedSolutionTraceId ||
+    value.executionId !== expectedExecutionId
+  ) {
+    traceFailure();
   }
-
-  ancestors.add(value);
-  const compatible = Array.isArray(value)
-    ? value.every((item) => isJsonCompatible(item, ancestors))
-    : Object.values(value).every((item) =>
-        isJsonCompatible(item, ancestors)
-      );
-  ancestors.delete(value);
-
-  return compatible;
 }
 
-function containsForbiddenSemanticKey(value: unknown): boolean {
+function containsForbiddenKey(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some(containsForbiddenSemanticKey);
+    return value.some(containsForbiddenKey);
   }
 
   if (!isRecord(value)) {
@@ -190,331 +259,218 @@ function containsForbiddenSemanticKey(value: unknown): boolean {
 
   const forbidden = new Set([
     "move",
-    "moves",
+    "moveToken",
+    "score",
+    "rank",
+    "total",
+    "weight",
     "entropy",
     "interpretation",
     "evaluation",
-    "score",
-    "rank",
-    "penalty",
-    "cost",
-    "metric",
-    "metrics",
-    "normalization",
-    "weightedAggregation",
   ]);
 
   return Object.entries(value).some(
-    ([key, nested]) =>
-      forbidden.has(key) || containsForbiddenSemanticKey(nested)
+    ([key, nested]) => forbidden.has(key) || containsForbiddenKey(nested)
   );
 }
 
-type IdentifiedRecord = Record<string, unknown> & {
-  transitionId: string;
-};
+function containsNumber(value: unknown): boolean {
+  if (typeof value === "number") {
+    return true;
+  }
 
-function recordsByTransition(
-  values: unknown[],
-  knownTransitionIds: ReadonlySet<string>
-): IdentifiedRecord[] {
-  return values.map((value) => {
-    if (
-      !isRecord(value) ||
-      !isNonEmptyString(value.transitionId) ||
-      !knownTransitionIds.has(value.transitionId)
-    ) {
-      return demandFailure();
-    }
+  if (Array.isArray(value)) {
+    return value.some(containsNumber);
+  }
 
-    return value as IdentifiedRecord;
-  });
+  return isRecord(value) && Object.values(value).some(containsNumber);
 }
 
-function assertChannel(
+function assertProvenance(
   value: unknown,
-  semanticOwner: string,
-  propositionCountPerTransition: number,
-  transitionCount: number,
-  knownTransitionIds: ReadonlySet<string>,
-  eventIds: ReadonlySet<string>,
-  observationIds: ReadonlySet<string>,
-  windowIds: ReadonlySet<string>
-): IdentifiedRecord[] {
-  if (!isRecord(value) || value.semanticOwner !== semanticOwner) {
+  sourceVersionIds: ReadonlySet<string>
+): void {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "afterHumanStateRef",
+      "beforeHumanStateRef",
+      "eventId",
+      "observationId",
+      "sourceVersionId",
+      "transitionId",
+      "windowId",
+    ]) ||
+    !isNonEmptyString(value.sourceVersionId) ||
+    !sourceVersionIds.has(value.sourceVersionId) ||
+    [
+      value.afterHumanStateRef,
+      value.beforeHumanStateRef,
+      value.eventId,
+      value.observationId,
+      value.transitionId,
+      value.windowId,
+    ].some((field) => field !== null)
+  ) {
     demandFailure();
   }
-
-  const propositions = arrayField(value, "propositionRecords");
-
-  if (propositions.length !== propositionCountPerTransition * transitionCount) {
-    demandFailure();
-  }
-
-  if (transitionCount === 0) {
-    if (
-      !isGovernedStatus(value.statusOnlyRecord) ||
-      !isRecord(value.statusOnlyRecord) ||
-      value.statusOnlyRecord.status !== "NOT_OBSERVED" ||
-      !isNonEmptyString(value.statusOnlyRecord.statusRecordId)
-    ) {
-      demandFailure();
-    }
-  } else if (value.statusOnlyRecord !== null) {
-    demandFailure();
-  }
-
-  const identified = recordsByTransition(
-    propositions,
-    knownTransitionIds
-  );
-
-  for (const proposition of identified) {
-    if (
-      !isGovernedStatus(proposition) ||
-      proposition.semanticOwner !== semanticOwner ||
-      !isNonEmptyString(proposition.propositionId) ||
-      !isNonEmptyString(proposition.eventId) ||
-      !eventIds.has(proposition.eventId) ||
-      !isNonEmptyString(proposition.observationId) ||
-      !observationIds.has(proposition.observationId) ||
-      !isNonEmptyString(proposition.windowId) ||
-      !windowIds.has(proposition.windowId)
-    ) {
-      demandFailure();
-    }
-  }
-
-  return identified;
 }
 
-export function assertDomainDemandV1(
+export function assertStatusOnlyDomainDemandV1(
   value: unknown,
-  transitionCount: number
+  trace: TransitionTraceV1
 ): asserts value is DomainDemandV1 {
   if (
     !isRecord(value) ||
+    !hasExactKeys(value, DOMAIN_KEYS) ||
     value.schemaId !== "SPEC-DM-001" ||
     value.schemaVersion !== "1.0" ||
     value.architecture !== "P-C" ||
     value.claimClass !== "T3_BOUNDED_DOMAIN_DEMAND" ||
-    !isNonEmptyString(value.artifactId) ||
-    !isRecord(value.executionEpisode)
+    !isRecord(value.executionEpisode) ||
+    !hasExactKeys(value.executionEpisode, EPISODE_KEYS) ||
+    value.executionEpisode.executionId !== trace.executionId
   ) {
     demandFailure();
   }
 
   const episode = value.executionEpisode;
-  const transitionRefs = arrayField(episode, "transitionRefs");
-  const eventRecords = arrayField(episode, "eventRecords");
-  const observationRecords = arrayField(episode, "observationRecords");
-  const windowRecords = arrayField(episode, "windowRecords");
-  const evidenceEdges = arrayField(episode, "evidenceEdges");
-  const sourceManifest = arrayField(episode, "sourceVersionManifest");
 
   if (
-    !isNonEmptyString(episode.executionId) ||
-    transitionRefs.length !== transitionCount ||
-    eventRecords.length !== transitionCount ||
-    observationRecords.length !== transitionCount * OBSERVATION_SCOPES.length ||
-    windowRecords.length !== transitionCount ||
-    evidenceEdges.length !== transitionCount * 10 ||
-    sourceManifest.length < 3 ||
-    !isRecord(episode.t3Consequences)
+    !Array.isArray(episode.transitionRefs) ||
+    episode.transitionRefs.length !== 0 ||
+    !Array.isArray(episode.eventRecords) ||
+    episode.eventRecords.length !== 0 ||
+    !Array.isArray(episode.observationRecords) ||
+    episode.observationRecords.length !== 0 ||
+    !Array.isArray(episode.windowRecords) ||
+    episode.windowRecords.length !== 0 ||
+    !Array.isArray(episode.evidenceEdges) ||
+    episode.evidenceEdges.length !== 0 ||
+    !Array.isArray(episode.sourceVersionManifest) ||
+    episode.sourceVersionManifest.length < 2 ||
+    !isRecord(episode.t3Consequences) ||
+    !hasExactKeys(episode.t3Consequences, [
+      "continuity",
+      "finger",
+      "grip",
+      "orientation",
+    ])
   ) {
     demandFailure();
   }
 
-  const sourceVersionIds = sourceManifest.map((source) => {
-    if (!isRecord(source) || !isNonEmptyString(source.sourceVersionId)) {
-      return demandFailure();
-    }
-    return source.sourceVersionId;
-  });
+  const sourceVersionIds = new Set<string>();
 
-  if (new Set(sourceVersionIds).size !== sourceVersionIds.length) {
-    demandFailure();
-  }
-
-  const transitionIds: string[] = [];
-
-  transitionRefs.forEach((reference, ordinal) => {
+  for (const source of episode.sourceVersionManifest) {
     if (
-      !isRecord(reference) ||
-      reference.ordinal !== ordinal ||
-      !isNonEmptyString(reference.transitionId) ||
-      !isNonEmptyString(reference.beforeHumanStateRef) ||
-      !isNonEmptyString(reference.afterHumanStateRef) ||
-      !isNonEmptyString(reference.sourceVersionId) ||
-      !sourceVersionIds.includes(reference.sourceVersionId)
+      !isRecord(source) ||
+      !hasExactKeys(source, [
+        "role",
+        "sourceName",
+        "sourceVersion",
+        "sourceVersionId",
+      ]) ||
+      !isNonEmptyString(source.sourceVersionId) ||
+      !isNonEmptyString(source.sourceName) ||
+      !isNonEmptyString(source.sourceVersion) ||
+      ![
+        "HUMAN_STATE_SOURCE",
+        "TRANSITION_SOURCE",
+        "SUPPLEMENTAL_EVIDENCE",
+        "DOMAIN_DERIVATION",
+      ].includes(source.role as string)
     ) {
       demandFailure();
     }
-
-    transitionIds.push(reference.transitionId);
-  });
-
-  const knownTransitionIds = new Set(transitionIds);
-  if (knownTransitionIds.size !== transitionIds.length) {
-    demandFailure();
-  }
-
-  const events = recordsByTransition(eventRecords, knownTransitionIds);
-  const eventIds = new Set<string>();
-
-  events.forEach((event, ordinal) => {
-    const reference = transitionRefs[ordinal] as Record<string, unknown>;
-
-    if (
-      !isGovernedStatus(event) ||
-      event.ordinal !== ordinal ||
-      event.eventType !== "TRANSITION_OCCURRENCE" ||
-      !isNonEmptyString(event.eventId) ||
-      event.transitionId !== reference.transitionId ||
-      event.beforeHumanStateRef !== reference.beforeHumanStateRef ||
-      event.afterHumanStateRef !== reference.afterHumanStateRef
-    ) {
-      demandFailure();
-    }
-    eventIds.add(event.eventId);
-  });
-
-  if (eventIds.size !== events.length) {
-    demandFailure();
-  }
-
-  const windows = recordsByTransition(windowRecords, knownTransitionIds);
-  const windowIds = new Set<string>();
-
-  for (const window of windows) {
-    if (
-      !isGovernedStatus(window) ||
-      !isNonEmptyString(window.windowId) ||
-      !isNonEmptyString(window.eventId) ||
-      !eventIds.has(window.eventId)
-    ) {
-      demandFailure();
-    }
-    windowIds.add(window.windowId);
-  }
-
-  if (windowIds.size !== windows.length) {
-    demandFailure();
-  }
-
-  const observations = recordsByTransition(
-    observationRecords,
-    knownTransitionIds
-  );
-  const observationIds = new Set<string>();
-  const scopeCountByTransition = new Map<string, Set<unknown>>();
-
-  for (const observation of observations) {
-    if (
-      !isGovernedStatus(observation) ||
-      !isNonEmptyString(observation.observationId) ||
-      !isNonEmptyString(observation.eventId) ||
-      !eventIds.has(observation.eventId) ||
-      !OBSERVATION_SCOPES.some((scope) => scope === observation.scope) ||
-      !Array.isArray(observation.fields)
-    ) {
-      demandFailure();
-    }
-
-    observationIds.add(observation.observationId);
-    const scopes = scopeCountByTransition.get(observation.transitionId) ??
-      new Set<unknown>();
-    scopes.add(observation.scope);
-    scopeCountByTransition.set(observation.transitionId, scopes);
+    sourceVersionIds.add(source.sourceVersionId);
   }
 
   if (
-    observationIds.size !== observations.length ||
-    [...scopeCountByTransition.values()].some(
-      (scopes) => scopes.size !== OBSERVATION_SCOPES.length
-    )
+    sourceVersionIds.size !== episode.sourceVersionManifest.length ||
+    !sourceVersionIds.has(UNOBSERVED_HUMAN_STATE_SOURCE_VERSION_ID_V1)
   ) {
     demandFailure();
   }
 
-  const edges = recordsByTransition(evidenceEdges, knownTransitionIds);
-  const edgeIds = new Set<string>();
-
-  for (const edge of edges) {
-    if (
-      !isGovernedStatus(edge) ||
-      edge.role !== "REALIZES" ||
-      !isNonEmptyString(edge.evidenceEdgeId) ||
-      !isNonEmptyString(edge.eventId) ||
-      !eventIds.has(edge.eventId) ||
-      !isNonEmptyString(edge.observationId) ||
-      !observationIds.has(edge.observationId) ||
-      !isNonEmptyString(edge.propositionId)
-    ) {
-      demandFailure();
-    }
-    edgeIds.add(edge.evidenceEdgeId);
-  }
-
-  if (edgeIds.size !== edges.length) {
-    demandFailure();
-  }
-
-  const channelArguments = [
-    [episode.t3Consequences.grip, "G-H-GR1", 2],
-    [episode.t3Consequences.finger, "F-H-FR1", 6],
-    [episode.t3Consequences.orientation, "O-H-OR1", 1],
-    [episode.t3Consequences.continuity, "C-H-CR1", 1],
+  const channelContracts = [
+    ["grip", "G-H-GR1"],
+    ["finger", "F-H-FR1"],
+    ["orientation", "O-H-OR1"],
+    ["continuity", "C-H-CR1"],
   ] as const;
-  const propositions = channelArguments.flatMap(
-    ([channel, semanticOwner, count]) =>
-      assertChannel(
-        channel,
-        semanticOwner,
-        count,
-        transitionCount,
-        knownTransitionIds,
-        eventIds,
-        observationIds,
-        windowIds
-      )
-  );
-  const propositionsById = new Map<string, IdentifiedRecord>();
 
-  for (const proposition of propositions) {
-    const propositionId = proposition.propositionId as string;
-    if (propositionsById.has(propositionId)) {
-      demandFailure();
-    }
-    propositionsById.set(propositionId, proposition);
-  }
-
-  for (const edge of edges) {
-    const proposition = propositionsById.get(edge.propositionId as string);
+  for (const [scope, semanticOwner] of channelContracts) {
+    const channel = episode.t3Consequences[scope];
 
     if (
-      !proposition ||
-      edge.transitionId !== proposition.transitionId ||
-      edge.eventId !== proposition.eventId ||
-      edge.observationId !== proposition.observationId
+      !isRecord(channel) ||
+      !hasExactKeys(channel, [
+        "propositionRecords",
+        "semanticOwner",
+        "statusOnlyRecord",
+      ]) ||
+      channel.semanticOwner !== semanticOwner ||
+      !Array.isArray(channel.propositionRecords) ||
+      channel.propositionRecords.length !== 0 ||
+      !isRecord(channel.statusOnlyRecord) ||
+      !hasExactKeys(channel.statusOnlyRecord, [
+        "provenance",
+        "reason",
+        "scope",
+        "status",
+        "statusRecordId",
+      ]) ||
+      channel.statusOnlyRecord.scope !== scope ||
+      channel.statusOnlyRecord.status !== "NOT_OBSERVED" ||
+      channel.statusOnlyRecord.reason !==
+        HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1 ||
+      channel.statusOnlyRecord.statusRecordId !==
+        stableIdentity("status-only", {
+          scope,
+          semanticOwner,
+          executionId: trace.executionId,
+          reason: HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1,
+        })
     ) {
       demandFailure();
     }
+
+    assertProvenance(
+      channel.statusOnlyRecord.provenance,
+      sourceVersionIds
+    );
   }
 
-  if (propositionsById.size !== edges.length) {
-    demandFailure();
+  for (const [planeName, plane] of [
+    ["T1", value.t1Plane],
+    ["T2", value.t2Plane],
+  ] as const) {
+    if (
+      !isRecord(plane) ||
+      !hasExactKeys(plane, [
+        "plane",
+        "planeId",
+        "provenance",
+        "reason",
+        "status",
+      ]) ||
+      plane.plane !== planeName ||
+      plane.status !== "NOT_OBSERVED" ||
+      plane.reason !== HUMAN_STATE_SOURCE_NOT_PROVIDED_REASON_V1 ||
+      plane.planeId !==
+        stableIdentity("plane", {
+          executionId: trace.executionId,
+          plane: planeName,
+        })
+    ) {
+      demandFailure();
+    }
+    assertProvenance(plane.provenance, sourceVersionIds);
   }
 
-  const expectedExecutionId = stableIdentity("execution", {
-    architecture: "P-C",
-    schemaId: "SPEC-DM-001",
-    schemaVersion: "1.0",
-    orderedTransitionIds: transitionIds,
-    sourceVersionIds,
-  });
   const expectedArtifactId = stableIdentity("domain-demand", {
-    executionId: expectedExecutionId,
+    executionId: trace.executionId,
     schemaId: "SPEC-DM-001",
     schemaVersion: "1.0",
     architecture: "P-C",
@@ -522,32 +478,10 @@ export function assertDomainDemandV1(
   });
 
   if (
-    episode.executionId !== expectedExecutionId ||
-    value.artifactId !== expectedArtifactId
+    value.artifactId !== expectedArtifactId ||
+    containsNumber(value) ||
+    containsForbiddenKey(value)
   ) {
-    demandFailure();
-  }
-
-  for (const planeName of ["t1Plane", "t2Plane"] as const) {
-    const plane = value[planeName];
-    const planeNumber = planeName === "t1Plane" ? "T1" : "T2";
-
-    if (
-      !isGovernedStatus(plane) ||
-      !isRecord(plane) ||
-      plane.plane !== planeNumber ||
-      plane.status !== "NOT_OBSERVED" ||
-      plane.planeId !==
-        stableIdentity("plane", {
-          executionId: expectedExecutionId,
-          plane: planeNumber,
-        })
-    ) {
-      demandFailure();
-    }
-  }
-
-  if (!isJsonCompatible(value) || containsForbiddenSemanticKey(value)) {
     demandFailure();
   }
 }

@@ -4,27 +4,42 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { applyMoves } from "../../src/lib/cube/moves";
-import { TransitionDemandExtractor } from "../../src/lib/evaluator/demand/TransitionDemandExtractor";
-import { createInitialHumanState } from "../../src/lib/evaluator/transition/HumanStateFactory";
-import { generateTransitions } from "../../src/lib/evaluator/transition/TransitionGenerator";
+import { EvaluatorPipeline } from "../../src/lib/evaluator/pipeline/EvaluatorPipeline";
 import {
   AtomicDemandStopServiceV1,
+  type EvaluatorPipelineV1Port,
   type SolverV1Port,
 } from "../../src/lib/integration/AtomicDemandStopServiceV1";
-import { adaptVerifiedMovesForTransitionsV1 } from "../../src/lib/integration/moveV1TransitionAdapter";
+import { SolutionTraceBuilderV1 } from "../../src/lib/integration/SolutionTraceBuilderV1";
 import { SolverV1Error } from "../../src/lib/solver/solverErrorsV1";
+import type { EvaluateRequestV1 } from "../../src/types/evaluate-v1";
 import {
-  MOVE_V1_TOKENS,
   SOLVED_FACELETS_V1,
   type CubeFaceletStateV1,
   type MoveV1,
   type SolverResultV1,
 } from "../../src/types/solver-v1";
 
+const BUILD_COMMIT = "a".repeat(40);
+
+function request(
+  facelets: string,
+  clientRequestId?: string
+): EvaluateRequestV1 {
+  return {
+    schemaVersion: "1.0",
+    cubeState: {
+      format: "URFDLB_FACELETS_V1",
+      facelets,
+    },
+    ...(clientRequestId === undefined ? {} : { clientRequestId }),
+  };
+}
+
 function resultFor(
   input: CubeFaceletStateV1,
   moves: readonly MoveV1[],
-  durationMs = 0
+  options: { durationMs?: number; cacheHit?: boolean } = {}
 ): SolverResultV1 {
   return {
     solverRunId: `solver-run:${input.stateId}:${moves.join("-")}`,
@@ -41,87 +56,374 @@ function resultFor(
       0
     ),
     verified: true,
-    cache: { hit: false, keyVersion: "1" },
-    durationMs,
+    cache: { hit: options.cacheHit ?? false, keyVersion: "1" },
+    durationMs: options.durationMs ?? 0,
   };
 }
 
 function solverReturning(
   moves: readonly MoveV1[],
-  duration: () => number = () => 0
+  resultOptions: () => { durationMs?: number; cacheHit?: boolean } = () => ({})
 ): SolverV1Port {
   return {
-    solve: vi.fn(async (input) => resultFor(input, moves, duration())),
+    solve: vi.fn(async (input) => resultFor(input, moves, resultOptions())),
   };
 }
 
-async function expectCode(
-  promise: Promise<unknown>,
-  code: string
-): Promise<void> {
-  await expect(promise).rejects.toMatchObject({ code });
-}
-
-function semanticIds(result: Awaited<ReturnType<AtomicDemandStopServiceV1["execute"]>>) {
+function semanticIds(
+  result: Awaited<ReturnType<AtomicDemandStopServiceV1["execute"]>>
+) {
   return {
-    inputStateId: result.input.stateId,
-    solverRunId: result.solver.solverRunId,
+    stateId: result.cubeState.stateId,
+    solutionId: result.solution.solutionId,
     executionId: result.transitionTrace.executionId,
-    transitionIds: result.transitionTrace.transitionIds,
-    artifactId: result.demand.artifactId,
+    cubeBoundaryIds: result.transitionTrace.cubeStateBoundaries.map(
+      (boundary) => boundary.boundaryId
+    ),
+    transitionIds: result.transitionTrace.solutionTransitions.map(
+      (transition) => transition.transitionId
+    ),
+    moveEventIds: result.transitionTrace.solutionTransitions.map(
+      (transition) => transition.moveEventId
+    ),
+    humanBoundaryIds:
+      result.transitionTrace.humanStateObservationBoundaries.map(
+        (boundary) => boundary.boundaryId
+      ),
+    demandArtifactId: result.domainDemand.artifactId,
+    demandStatusIds: Object.values(
+      result.domainDemand.executionEpisode.t3Consequences
+    ).map((channel) => channel.statusOnlyRecord?.statusRecordId),
   };
 }
 
-describe("C3 Atomic Demand-stop service", () => {
-  it("maps every closed MoveV1 token exactly through a copying adapter", () => {
-    const adapted = adaptVerifiedMovesForTransitionsV1(MOVE_V1_TOKENS);
+function allKeys(value: unknown): string[] {
+  if (value === null || typeof value !== "object") {
+    return [];
+  }
 
-    expect(adapted).toEqual(MOVE_V1_TOKENS);
-    expect(adapted).not.toBe(MOVE_V1_TOKENS);
-    expect(() =>
-      adaptVerifiedMovesForTransitionsV1(["Rw" as MoveV1])
-    ).toThrowError(
-      expect.objectContaining({ code: "SOLUTION_VERIFICATION_FAILED" })
+  if (Array.isArray(value)) {
+    return value.flatMap(allKeys);
+  }
+
+  return Object.entries(value).flatMap(([key, nested]) => [
+    key,
+    ...allKeys(nested),
+  ]);
+}
+
+function numericValues(value: unknown): number[] {
+  if (typeof value === "number") {
+    return [value];
+  }
+
+  if (value === null || typeof value !== "object") {
+    return [];
+  }
+
+  return Object.values(value).flatMap(numericValues);
+}
+
+function assertStatusOnlyDemand(
+  demand: Awaited<ReturnType<AtomicDemandStopServiceV1["execute"]>>["domainDemand"]
+): void {
+  expect(demand).toMatchObject({
+    schemaId: "SPEC-DM-001",
+    schemaVersion: "1.0",
+    architecture: "P-C",
+    claimClass: "T3_BOUNDED_DOMAIN_DEMAND",
+    t1Plane: { status: "NOT_OBSERVED" },
+    t2Plane: { status: "NOT_OBSERVED" },
+  });
+  expect(demand.executionEpisode).toMatchObject({
+    transitionRefs: [],
+    eventRecords: [],
+    observationRecords: [],
+    windowRecords: [],
+    evidenceEdges: [],
+  });
+
+  expect(Object.keys(demand.executionEpisode.t3Consequences)).toEqual([
+    "grip",
+    "finger",
+    "orientation",
+    "continuity",
+  ]);
+  for (const channel of Object.values(
+    demand.executionEpisode.t3Consequences
+  )) {
+    expect(channel.propositionRecords).toEqual([]);
+    expect(channel.statusOnlyRecord).toMatchObject({
+      status: "NOT_OBSERVED",
+      reason: "HUMAN_STATE_SOURCE_NOT_PROVIDED",
+    });
+    expect(channel.statusOnlyRecord).not.toHaveProperty("value");
+  }
+
+  expect(numericValues(demand)).toEqual([]);
+  expect(allKeys(demand)).not.toEqual(
+    expect.arrayContaining([
+      "move",
+      "moveToken",
+      "score",
+      "rank",
+      "total",
+      "weight",
+      "entropy",
+      "interpretation",
+      "evaluation",
+    ])
+  );
+}
+
+describe("C3R production contract reconciliation", () => {
+  it("C3R-01 removes fabricated Human-State physics from production integration", () => {
+    const productionSources = [
+      "src/app/api/evaluate/route.ts",
+      "src/lib/integration/AtomicDemandStopServiceV1.ts",
+      "src/lib/integration/SolutionTraceBuilderV1.ts",
+    ]
+      .map((fileName) =>
+        readFileSync(path.resolve(process.cwd(), fileName), "utf8")
+      )
+      .join("\n");
+
+    expect(productionSources).not.toMatch(
+      /HumanStateFactory|TransitionGenerator|TransitionPhysics|createInitialHumanState|generateTransitions|TransitionDemandExtractor/
+    );
+    expect(productionSources).not.toMatch(
+      /leftContactCount|rightContactCount|fatigue|certainty|continuity|velocity/
     );
   });
 
-  it("C3-02 returns zero Transitions and status-only Demand for solved input", async () => {
+  it("C3R-02 advances only through the evaluator-owned unobserved input", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const governedPipeline = new EvaluatorPipeline();
+    const advanceToDemand = vi.fn((input) =>
+      governedPipeline.advanceToDemand(input)
+    );
+    const evaluatorPipeline: EvaluatorPipelineV1Port = { advanceToDemand };
     const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning([]),
+      solver: solverReturning(["R'"]),
+      evaluatorPipeline,
+      buildCommit: BUILD_COMMIT,
     });
-    const result = await service.execute({ facelets: SOLVED_FACELETS_V1 });
-    const channels = result.demand.executionEpisode.t3Consequences;
 
-    expect(result).toMatchObject({
-      schemaId: "EvaluateSuccessV1",
-      semanticStop: "DEMAND",
-      solver: { moves: [], htm: 0, qtm: 0, verified: true },
-      transitionTrace: { count: 0, transitionIds: [] },
+    const result = await service.execute(request(facelets));
+
+    expect(advanceToDemand).toHaveBeenCalledOnce();
+    expect(advanceToDemand).toHaveBeenCalledWith({
+      kind: "UNOBSERVED_HUMAN_STATE",
+      executionId: result.transitionTrace.executionId,
+      solutionTraceId: expect.any(String),
+      solutionTransitionIds: result.transitionTrace.solutionTransitions.map(
+        (transition) => transition.transitionId
+      ),
+      humanStateBoundaries:
+        result.transitionTrace.humanStateObservationBoundaries,
     });
-    expect(result.demand.executionEpisode.transitionRefs).toEqual([]);
-
-    for (const channel of Object.values(channels)) {
-      expect(channel.propositionRecords).toEqual([]);
-      expect(channel.statusOnlyRecord).toMatchObject({
-        status: "NOT_OBSERVED",
-      });
-      expect(channel.statusOnlyRecord).not.toHaveProperty("value");
-    }
-
-    for (const stage of Object.values(result.downstreamAvailability).filter(
-      (value) => typeof value === "object"
-    )) {
-      expect(stage).toMatchObject({
-        status: "NOT_SEMANTICALLY_AVAILABLE",
-        reason: "ENTROPY_SEMANTICS_UNCLOSED",
-        demandArtifactId: result.demand.artifactId,
-      });
-    }
   });
 
-  it("C3-04 rejects invalid and unsolvable cubes before solver execution", async () => {
+  it("preserves the governed-Transition discriminator for C1 compatibility", () => {
+    const pipeline = new EvaluatorPipeline();
+
+    expect(
+      pipeline.advanceToDemand({
+        kind: "GOVERNED_TRANSITIONS",
+        transitions: [],
+      })
+    ).toEqual(pipeline.advanceToDemand([]));
+  });
+
+  it("C3R-06 builds n solution transitions and n+1 boundary records", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["U", "R"]);
+    const result = await new AtomicDemandStopServiceV1({
+      solver: solverReturning(["R'", "U'"]),
+      buildCommit: BUILD_COMMIT,
+    }).execute(request(facelets));
+    const trace = result.transitionTrace;
+
+    expect(result.solution).toMatchObject({
+      moves: ["R'", "U'"],
+      htm: 2,
+      qtm: 2,
+      verified: true,
+    });
+    expect(trace.solutionTransitions).toHaveLength(2);
+    expect(trace.cubeStateBoundaries).toHaveLength(3);
+    expect(trace.humanStateObservationBoundaries).toHaveLength(3);
+    expect(
+      trace.humanStateObservationBoundaries.map((boundary) => ({
+        ordinal: boundary.ordinal,
+        status: boundary.status,
+        reason: boundary.reason,
+      }))
+    ).toEqual([
+      {
+        ordinal: 0,
+        status: "NOT_OBSERVED",
+        reason: "HUMAN_STATE_SOURCE_NOT_PROVIDED",
+      },
+      {
+        ordinal: 1,
+        status: "NOT_OBSERVED",
+        reason: "HUMAN_STATE_SOURCE_NOT_PROVIDED",
+      },
+      {
+        ordinal: 2,
+        status: "NOT_OBSERVED",
+        reason: "HUMAN_STATE_SOURCE_NOT_PROVIDED",
+      },
+    ]);
+    expect(
+      trace.solutionTransitions.map((transition) => transition.move)
+    ).toEqual(result.solution.moves);
+    expect(result.domainDemand.executionEpisode.transitionRefs).toEqual([]);
+    assertStatusOnlyDemand(result.domainDemand);
+  });
+
+  it("C3R-07 uses the same status-only path for an already solved cube", async () => {
+    const result = await new AtomicDemandStopServiceV1({
+      solver: solverReturning([]),
+      buildCommit: BUILD_COMMIT,
+    }).execute(request(SOLVED_FACELETS_V1));
+
+    expect(result.solution).toMatchObject({
+      moves: [],
+      htm: 0,
+      qtm: 0,
+      verified: true,
+    });
+    expect(result.transitionTrace.solutionTransitions).toEqual([]);
+    expect(result.transitionTrace.cubeStateBoundaries).toHaveLength(1);
+    expect(
+      result.transitionTrace.humanStateObservationBoundaries
+    ).toHaveLength(1);
+    assertStatusOnlyDemand(result.domainDemand);
+  });
+
+  it("C3R-08 excludes request metadata, cache state, and timings from semantic IDs", async () => {
+    let call = 0;
+    const solver = solverReturning(["R'"], () => ({
+      durationMs: ++call,
+      cacheHit: call % 2 === 0,
+    }));
+    const service = new AtomicDemandStopServiceV1({
+      solver,
+      buildCommit: BUILD_COMMIT,
+    });
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const first = await service.execute(request(facelets, "client-a"));
+    const second = await service.execute(request(facelets, "client-b"));
+
+    expect(first.timings).not.toEqual(second.timings);
+    expect(first.solution.solver.cacheHit).not.toBe(
+      second.solution.solver.cacheHit
+    );
+    expect(semanticIds(first)).toEqual(semanticIds(second));
+  });
+
+  it("C3R-09 keeps MoveV1 only in solution provenance, never Domain Demand", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const result = await new AtomicDemandStopServiceV1({
+      solver: solverReturning(["R'"]),
+      buildCommit: BUILD_COMMIT,
+    }).execute(request(facelets));
+
+    expect(result.solution.moves).toEqual(["R'"]);
+    expect(result.transitionTrace.solutionTransitions[0].move).toBe("R'");
+    expect(allKeys(result.domainDemand)).not.toContain("move");
+    expect(JSON.stringify(result.domainDemand)).not.toContain("R'");
+  });
+
+  it("C3R-10 verifies independently before building a trace", async () => {
+    const callOrder: string[] = [];
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const traceBuilder = new SolutionTraceBuilderV1();
+    const service = new AtomicDemandStopServiceV1({
+      solver: solverReturning(["R'"]),
+      verifier: (input, moves) => {
+        callOrder.push("verify");
+        return {
+          moves: moves as readonly MoveV1[],
+          htm: 1,
+          qtm: 1,
+          verified: true,
+        };
+      },
+      traceBuilder: {
+        build: (...args) => {
+          callOrder.push("trace");
+          return traceBuilder.build(...args);
+        },
+      },
+      buildCommit: BUILD_COMMIT,
+    });
+
+    await service.execute(request(facelets));
+    expect(callOrder).toEqual(["verify", "trace"]);
+  });
+
+  it("maps verifier, trace, and Demand faults atomically", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const base = request(facelets);
+
+    await expect(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning(["U"]),
+        buildCommit: BUILD_COMMIT,
+      }).execute(base)
+    ).rejects.toMatchObject({ code: "SOLUTION_VERIFICATION_FAILED" });
+
+    await expect(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning(["R'"]),
+        traceBuilder: {
+          build: () => {
+            throw new Error("trace internals");
+          },
+        },
+        buildCommit: BUILD_COMMIT,
+      }).execute(base)
+    ).rejects.toMatchObject({ code: "TRANSITION_GENERATION_FAILED" });
+
+    await expect(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning(["R'"]),
+        traceBuilder: { build: () => ({ schemaId: "malformed" }) },
+        buildCommit: BUILD_COMMIT,
+      }).execute(base)
+    ).rejects.toMatchObject({ code: "TRANSITION_GENERATION_FAILED" });
+
+    await expect(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning(["R'"]),
+        evaluatorPipeline: {
+          advanceToDemand: () => {
+            throw new Error("Demand internals");
+          },
+        },
+        buildCommit: BUILD_COMMIT,
+      }).execute(base)
+    ).rejects.toMatchObject({ code: "DEMAND_CONTRACT_FAILED" });
+
+    await expect(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning(["R'"]),
+        evaluatorPipeline: {
+          advanceToDemand: () => ({ schemaId: "malformed" }),
+        },
+        buildCommit: BUILD_COMMIT,
+      }).execute(base)
+    ).rejects.toMatchObject({ code: "DEMAND_CONTRACT_FAILED" });
+  });
+
+  it("keeps invalid and unsolvable states ahead of solver execution", async () => {
     const solver = solverReturning([]);
-    const service = new AtomicDemandStopServiceV1({ solver });
+    const service = new AtomicDemandStopServiceV1({
+      solver,
+      buildCommit: BUILD_COMMIT,
+    });
     const twisted = SOLVED_FACELETS_V1.split("");
     [twisted[8], twisted[9], twisted[20]] = [
       twisted[9],
@@ -129,147 +431,42 @@ describe("C3 Atomic Demand-stop service", () => {
       twisted[8],
     ];
 
-    await expectCode(
-      service.execute({ facelets: "short" }),
-      "INVALID_CUBE_STATE"
-    );
-    await expectCode(
-      service.execute({ facelets: twisted.join("") }),
-      "UNSOLVABLE_CUBE"
-    );
+    await expect(service.execute(request("short"))).rejects.toMatchObject({
+      code: "INVALID_CUBE_STATE",
+    });
+    await expect(
+      service.execute(request(twisted.join("")))
+    ).rejects.toMatchObject({ code: "UNSOLVABLE_CUBE" });
     expect(solver.solve).not.toHaveBeenCalled();
   });
 
-  it("C3-06 rejects wrong or verifier-failed solutions before Transitions", async () => {
-    const inputFacelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
-    const transitionGenerator = vi.fn();
-    const demandProducer = vi.fn();
-    const wrong = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["U"]),
-      transitionGenerator,
-      demandProducer,
-    });
-
-    await expectCode(
-      wrong.execute({ facelets: inputFacelets }),
-      "SOLUTION_VERIFICATION_FAILED"
-    );
-    expect(transitionGenerator).not.toHaveBeenCalled();
-    expect(demandProducer).not.toHaveBeenCalled();
-
-    const verifierFailure = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["R'"]),
-      verifier: () => {
-        throw new SolverV1Error("SOLUTION_VERIFICATION_FAILED");
+  it("does not leak unknown solver failures", async () => {
+    const service = new AtomicDemandStopServiceV1({
+      solver: {
+        solve: async () => {
+          throw new Error("/private/worker.ts: engine stderr");
+        },
       },
-      transitionGenerator,
-      demandProducer,
+      buildCommit: BUILD_COMMIT,
     });
 
-    await expectCode(
-      verifierFailure.execute({ facelets: inputFacelets }),
-      "SOLUTION_VERIFICATION_FAILED"
-    );
-    expect(transitionGenerator).not.toHaveBeenCalled();
-    expect(demandProducer).not.toHaveBeenCalled();
+    await expect(
+      service.execute(request(SOLVED_FACELETS_V1))
+    ).rejects.toMatchObject({ code: "INTERNAL_FAILURE" });
   });
 
-  it.each([
-    ["throws", () => {
-      throw new Error("transition internals");
-    }],
-    ["returns a malformed trace", () => []],
-  ])("C3-07 maps a Transition generator that %s atomically", async (_case, generator) => {
-    const demandProducer = vi.fn();
+  it("maps governed SolverV1 failures without changing C2", async () => {
     const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["R'"]),
-      transitionGenerator: generator,
-      demandProducer,
+      solver: {
+        solve: async () => {
+          throw new SolverV1Error("SOLVER_TIMEOUT");
+        },
+      },
+      buildCommit: BUILD_COMMIT,
     });
-    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
 
-    await expectCode(
-      service.execute({ facelets }),
-      "TRANSITION_FAILED"
-    );
-    expect(demandProducer).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["throws", () => {
-      throw new Error("demand internals");
-    }],
-    ["returns a malformed artifact", () => ({ schemaId: "wrong" })],
-  ])("C3-08 maps a Demand producer that %s atomically", async (_case, producer) => {
-    const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["R'"]),
-      demandProducer: producer,
-    });
-    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
-
-    await expectCode(
-      service.execute({ facelets }),
-      "DEMAND_CONTRACT_FAILED"
-    );
-  });
-
-  it("C3-09 preserves the governed identity and provenance chain", async () => {
-    const moves: MoveV1[] = ["R'", "U'"];
-    const facelets = applyMoves(SOLVED_FACELETS_V1, ["U", "R"]);
-    const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning(moves),
-    });
-    const result = await service.execute({ facelets });
-    const episode = result.demand.executionEpisode;
-
-    expect(result.solver.inputStateId).toBe(result.input.stateId);
-    expect(result.transitionTrace.executionId).toBe(episode.executionId);
-    expect(result.transitionTrace.transitionIds).toEqual(
-      episode.transitionRefs.map((reference) => reference.transitionId)
-    );
-    expect(episode.transitionRefs.map((reference) => reference.ordinal)).toEqual([
-      0,
-      1,
-    ]);
-    expect(result.downstreamAvailability.demandArtifactId).toBe(
-      result.demand.artifactId
-    );
-
-    for (const event of episode.eventRecords) {
-      const reference = episode.transitionRefs[event.ordinal];
-      expect(event.transitionId).toBe(reference.transitionId);
-      expect(event.beforeHumanStateRef).toBe(reference.beforeHumanStateRef);
-      expect(event.afterHumanStateRef).toBe(reference.afterHumanStateRef);
-    }
-  });
-
-  it("C3-10 keeps semantic identities stable when duration changes", async () => {
-    let duration = 10;
-    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
-    const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["R'"], () => duration++),
-    });
-    const first = await service.execute({ facelets });
-    const second = await service.execute({ facelets });
-
-    expect(second.solver.durationMs).not.toBe(first.solver.durationMs);
-    expect(semanticIds(second)).toEqual(semanticIds(first));
-  });
-
-  it("validates the unchanged C1 producer and avoids downstream imports", () => {
-    const initial = createInitialHumanState();
-    const transitions = generateTransitions(initial, ["R"]);
-    const demand = new TransitionDemandExtractor().extract(transitions);
-    const source = readFileSync(
-      path.resolve(
-        process.cwd(),
-        "src/lib/integration/AtomicDemandStopServiceV1.ts"
-      ),
-      "utf8"
-    );
-
-    expect(demand.schemaId).toBe("SPEC-DM-001");
-    expect(source).not.toMatch(/evaluator\/(metrics|entropy|interpretation|evaluation|prototype|legacy)/i);
-    expect(source).not.toMatch(/evaluateMoves|ergonomicsScore|totalScore/);
+    await expect(
+      service.execute(request(SOLVED_FACELETS_V1))
+    ).rejects.toMatchObject({ code: "SOLVER_TIMEOUT" });
   });
 });

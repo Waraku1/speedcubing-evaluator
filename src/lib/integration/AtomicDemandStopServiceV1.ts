@@ -1,24 +1,20 @@
 import {
   DOWNSTREAM_UNAVAILABLE_REASON_V1,
   DOWNSTREAM_UNAVAILABLE_STATUS_V1,
+  EVALUATE_RELEASE_V1,
   type DownstreamAvailabilityV1,
   type EvaluateRequestV1,
-  type EvaluateSuccessV1,
+  type EvaluateResultV1,
+  type TransitionTraceV1,
 } from "../../types/evaluate-v1";
 import type {
   CubeFaceletStateV1,
-  MoveV1,
   SolverResultV1,
   SolverV1Options,
 } from "../../types/solver-v1";
-import type { Move as TransitionMove } from "../cube/cube";
 import { createCubeFaceletStateV1 } from "../cube/cubeStateV1";
-import type { DomainDemandV1 } from "../evaluator/demand/DomainDemandV1";
-import { TransitionDemandExtractor } from "../evaluator/demand/TransitionDemandExtractor";
-import type { HumanState } from "../evaluator/state/HumanState";
-import { createInitialHumanState } from "../evaluator/transition/HumanStateFactory";
-import type { Transition } from "../evaluator/transition/Transition";
-import { generateTransitions } from "../evaluator/transition/TransitionGenerator";
+import type { DemandAdvanceInputV1 } from "../evaluator/demand/DemandAdvanceInputV1";
+import { EvaluatorPipeline } from "../evaluator/pipeline/EvaluatorPipeline";
 import { solverV1 } from "../solver/SolverV1";
 import type { VerifiedSolutionV1 } from "../solver/solutionVerifierV1";
 import { verifySolutionV1 } from "../solver/solutionVerifierV1";
@@ -26,11 +22,17 @@ import {
   EvaluateV1Error,
   evaluateErrorFromSolverV1,
 } from "./evaluateErrorsV1";
-import { adaptVerifiedMovesForTransitionsV1 } from "./moveV1TransitionAdapter";
 import {
-  assertDomainDemandV1,
-  assertTransitionTraceV1,
+  SolutionTraceBuilderV1,
+  type BuiltSolutionTraceV1,
+} from "./SolutionTraceBuilderV1";
+import {
+  assertSolutionTraceV1,
+  assertStatusOnlyDomainDemandV1,
 } from "./productionContractV1";
+
+const REQUIRED_HEAD_BUILD_COMMIT =
+  "4a37bd23c3155c8cff1d4c71ec2f80d0e7c85a94";
 
 export interface SolverV1Port {
   solve(
@@ -39,35 +41,99 @@ export interface SolverV1Port {
   ): Promise<SolverResultV1>;
 }
 
+export interface SolutionTraceBuilderV1Port {
+  build(
+    input: CubeFaceletStateV1,
+    solverResult: SolverResultV1,
+    verified: VerifiedSolutionV1
+  ): unknown;
+}
+
+export interface EvaluatorPipelineV1Port {
+  advanceToDemand(input: DemandAdvanceInputV1): unknown;
+}
+
 export type AtomicDemandStopDependenciesV1 = {
   solver: SolverV1Port;
   verifier: (
     input: CubeFaceletStateV1,
     moves: unknown
   ) => VerifiedSolutionV1;
-  moveAdapter: (moves: readonly MoveV1[]) => TransitionMove[];
-  initialHumanState: () => HumanState;
-  transitionGenerator: (
-    initialState: HumanState,
-    moves: TransitionMove[]
-  ) => unknown;
-  demandProducer: (transitions: readonly Transition[]) => unknown;
+  traceBuilder: SolutionTraceBuilderV1Port;
+  evaluatorPipeline: EvaluatorPipelineV1Port;
+  buildCommit: string;
 };
 
-const demandExtractor = new TransitionDemandExtractor();
+function defaultBuildCommit(): string {
+  for (const candidate of [
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.GIT_COMMIT_SHA,
+    REQUIRED_HEAD_BUILD_COMMIT,
+  ]) {
+    if (typeof candidate === "string" && /^[0-9a-f]{40}$/i.test(candidate)) {
+      return candidate.toLowerCase();
+    }
+  }
+
+  return REQUIRED_HEAD_BUILD_COMMIT;
+}
 
 const PRODUCTION_DEPENDENCIES: AtomicDemandStopDependenciesV1 = {
   solver: solverV1,
   verifier: verifySolutionV1,
-  moveAdapter: adaptVerifiedMovesForTransitionsV1,
-  initialHumanState: createInitialHumanState,
-  transitionGenerator: generateTransitions,
-  demandProducer: (transitions) => demandExtractor.extract(transitions),
+  traceBuilder: new SolutionTraceBuilderV1(),
+  evaluatorPipeline: new EvaluatorPipeline(),
+  buildCommit: defaultBuildCommit(),
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  record: Record<string, unknown>,
+  expectedKeys: readonly string[]
+): boolean {
+  return (
+    Object.keys(record).sort().join("|") ===
+    [...expectedKeys].sort().join("|")
+  );
+}
+
+function assertRequest(request: unknown): asserts request is EvaluateRequestV1 {
+  if (!isRecord(request)) {
+    throw new EvaluateV1Error("INVALID_JSON");
+  }
+
+  const rootKeys = Object.keys(request);
+  const expectedRootKeys = request.clientRequestId === undefined
+    ? ["cubeState", "schemaVersion"]
+    : ["clientRequestId", "cubeState", "schemaVersion"];
+
+  if (
+    !hasExactKeys(request, expectedRootKeys) ||
+    request.schemaVersion !== "1.0" ||
+    !isRecord(request.cubeState) ||
+    !hasExactKeys(request.cubeState, ["facelets", "format"]) ||
+    typeof request.cubeState.format !== "string" ||
+    typeof request.cubeState.facelets !== "string" ||
+    (rootKeys.includes("clientRequestId") &&
+      (typeof request.clientRequestId !== "string" ||
+        request.clientRequestId.length < 1 ||
+        request.clientRequestId.length > 64))
+  ) {
+    throw new EvaluateV1Error("INVALID_JSON");
+  }
+
+
+  if (request.cubeState.format !== "URFDLB_FACELETS_V1") {
+    throw new EvaluateV1Error("INVALID_CUBE_STATE");
+  }
+}
+
 function sameMoves(
-  left: readonly MoveV1[],
-  right: readonly MoveV1[]
+  left: VerifiedSolutionV1["moves"],
+  right: SolverResultV1["moves"]
 ): boolean {
   return (
     left.length === right.length &&
@@ -80,44 +146,27 @@ function assertSolverResult(
   result: unknown
 ): asserts result is SolverResultV1 {
   if (
-    typeof result !== "object" ||
-    result === null ||
-    !("inputStateId" in result) ||
+    !isRecord(result) ||
     result.inputStateId !== input.stateId ||
-    !("solverRunId" in result) ||
     typeof result.solverRunId !== "string" ||
     result.solverRunId.length === 0 ||
-    !("verified" in result) ||
     result.verified !== true ||
-    !("moves" in result) ||
     !Array.isArray(result.moves) ||
-    !("htm" in result) ||
     typeof result.htm !== "number" ||
     !Number.isInteger(result.htm) ||
     result.htm < 0 ||
-    !("qtm" in result) ||
     typeof result.qtm !== "number" ||
     !Number.isInteger(result.qtm) ||
     result.qtm < 0 ||
-    !("durationMs" in result) ||
     typeof result.durationMs !== "number" ||
     !Number.isFinite(result.durationMs) ||
     result.durationMs < 0 ||
-    !("cache" in result) ||
-    typeof result.cache !== "object" ||
-    result.cache === null ||
-    !("hit" in result.cache) ||
+    !isRecord(result.cache) ||
     typeof result.cache.hit !== "boolean" ||
-    !("keyVersion" in result.cache) ||
     result.cache.keyVersion !== "1" ||
-    !("engine" in result) ||
-    typeof result.engine !== "object" ||
-    result.engine === null ||
-    !("id" in result.engine) ||
+    !isRecord(result.engine) ||
     result.engine.id !== "cubejs" ||
-    !("version" in result.engine) ||
     result.engine.version !== "1.3.2" ||
-    !("adapterVersion" in result.engine) ||
     result.engine.adapterVersion !== "1.0"
   ) {
     throw new EvaluateV1Error("SOLUTION_VERIFICATION_FAILED");
@@ -125,18 +174,27 @@ function assertSolverResult(
 }
 
 function downstreamAvailability(
-  demandArtifactId: string
+  demandArtifactId: string,
+  executionId: string,
+  buildCommit: string
 ): DownstreamAvailabilityV1 {
   const unavailable = () =>
     Object.freeze({
       status: DOWNSTREAM_UNAVAILABLE_STATUS_V1,
       reason: DOWNSTREAM_UNAVAILABLE_REASON_V1,
-      demandArtifactId,
     });
 
   return Object.freeze({
-    schemaId: "DownstreamAvailabilityV1" as const,
+    schemaId: "DownstreamAvailabilityV1",
+    schemaVersion: "1.0",
     demandArtifactId,
+    demandSchemaId: "SPEC-DM-001",
+    demandSchemaVersion: "1.0",
+    provenance: Object.freeze({
+      executionId,
+      release: EVALUATE_RELEASE_V1,
+      buildCommit,
+    }),
     entropy: unavailable(),
     interpretation: unavailable(),
     evaluation: unavailable(),
@@ -153,13 +211,26 @@ export class AtomicDemandStopServiceV1 {
       ...PRODUCTION_DEPENDENCIES,
       ...dependencies,
     };
+
+    if (!/^[0-9a-f]{40}$/i.test(this.dependencies.buildCommit)) {
+      throw new TypeError("buildCommit must be a 40-hex commit identity.");
+    }
   }
 
   async execute(
     request: EvaluateRequestV1,
     options: SolverV1Options = {}
-  ): Promise<EvaluateSuccessV1> {
-    const input = createCubeFaceletStateV1(request.facelets);
+  ): Promise<EvaluateResultV1> {
+    assertRequest(request);
+
+    let input: CubeFaceletStateV1;
+
+    try {
+      input = createCubeFaceletStateV1(request.cubeState.facelets);
+    } catch (error) {
+      throw evaluateErrorFromSolverV1(error);
+    }
+
     let solverResult: SolverResultV1;
 
     try {
@@ -169,7 +240,6 @@ export class AtomicDemandStopServiceV1 {
     }
 
     let verified: VerifiedSolutionV1;
-    let transitionMoves: TransitionMove[];
 
     try {
       assertSolverResult(input, solverResult);
@@ -183,54 +253,100 @@ export class AtomicDemandStopServiceV1 {
       ) {
         throw new EvaluateV1Error("SOLUTION_VERIFICATION_FAILED");
       }
-
-      transitionMoves = this.dependencies.moveAdapter(verified.moves);
     } catch {
       throw new EvaluateV1Error("SOLUTION_VERIFICATION_FAILED");
     }
 
-    let transitions: Transition[];
+    let builtTrace: BuiltSolutionTraceV1;
 
     try {
-      const initialState = this.dependencies.initialHumanState();
-      const generated = this.dependencies.transitionGenerator(
-        initialState,
-        transitionMoves
+      const producedTrace = this.dependencies.traceBuilder.build(
+        input,
+        solverResult,
+        verified
       );
-      assertTransitionTraceV1(generated, initialState, transitionMoves);
-      transitions = generated;
+      assertSolutionTraceV1(producedTrace, input, solverResult, verified);
+      builtTrace = producedTrace;
     } catch {
-      throw new EvaluateV1Error("TRANSITION_FAILED");
+      throw new EvaluateV1Error("TRANSITION_GENERATION_FAILED");
     }
 
-    let demand: DomainDemandV1;
+    let domainDemand;
 
     try {
-      const produced = this.dependencies.demandProducer(transitions);
-      assertDomainDemandV1(produced, transitions.length);
-      demand = produced;
+      const producedDemand = this.dependencies.evaluatorPipeline.advanceToDemand({
+        kind: "UNOBSERVED_HUMAN_STATE",
+        executionId: builtTrace.executionId,
+        solutionTraceId: builtTrace.solutionTraceId,
+        solutionTransitionIds: builtTrace.solutionTransitions.map(
+          (transition) => transition.transitionId
+        ),
+        humanStateBoundaries:
+          builtTrace.humanStateObservationBoundaries,
+      });
+      assertStatusOnlyDomainDemandV1(producedDemand, builtTrace);
+      domainDemand = producedDemand;
     } catch {
       throw new EvaluateV1Error("DEMAND_CONTRACT_FAILED");
     }
 
     const transitionIds = Object.freeze(
-      demand.executionEpisode.transitionRefs.map(
-        (reference) => reference.transitionId
+      builtTrace.solutionTransitions.map(
+        (transition) => transition.transitionId
       )
     );
+    const transitionTrace: TransitionTraceV1 = Object.freeze({
+      schemaId: builtTrace.schemaId,
+      schemaVersion: builtTrace.schemaVersion,
+      executionId: builtTrace.executionId,
+      solutionId: builtTrace.solutionId,
+      cubeStateBoundaries: builtTrace.cubeStateBoundaries,
+      solutionTransitions: builtTrace.solutionTransitions,
+      humanStateObservationBoundaries:
+        builtTrace.humanStateObservationBoundaries,
+    });
 
     return Object.freeze({
-      schemaId: "EvaluateSuccessV1" as const,
-      semanticStop: "DEMAND" as const,
-      input,
-      solver: solverResult,
-      transitionTrace: Object.freeze({
-        executionId: demand.executionEpisode.executionId,
-        count: transitions.length,
-        transitionIds,
+      cubeState: Object.freeze({
+        stateId: input.stateId,
+        format: input.format,
       }),
-      demand,
-      downstreamAvailability: downstreamAvailability(demand.artifactId),
+      solution: Object.freeze({
+        solutionId: transitionTrace.solutionId,
+        moves: Object.freeze([...verified.moves]),
+        htm: verified.htm,
+        qtm: verified.qtm,
+        verified: true,
+        solver: Object.freeze({
+          solverRunId: solverResult.solverRunId,
+          id: solverResult.engine.id,
+          version: solverResult.engine.version,
+          adapterVersion: solverResult.engine.adapterVersion,
+          cacheHit: solverResult.cache.hit,
+          cacheKeyVersion: solverResult.cache.keyVersion,
+        }),
+      }),
+      transitionTrace,
+      domainDemand,
+      downstreamAvailability: downstreamAvailability(
+        domainDemand.artifactId,
+        transitionTrace.executionId,
+        this.dependencies.buildCommit.toLowerCase()
+      ),
+      warnings: Object.freeze([
+        Object.freeze({
+          code: "HUMAN_STATE_NOT_OBSERVED",
+          executionId: transitionTrace.executionId,
+          transitionIds,
+        }),
+      ]),
+      timings: Object.freeze({
+        solverDurationMs: solverResult.durationMs,
+      }),
+      build: Object.freeze({
+        release: EVALUATE_RELEASE_V1,
+        commit: this.dependencies.buildCommit.toLowerCase(),
+      }),
     });
   }
 }

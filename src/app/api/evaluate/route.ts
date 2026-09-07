@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -11,16 +13,22 @@ import {
   normalizeEvaluateErrorV1,
   toEvaluateErrorValueV1,
 } from "../../../lib/integration/evaluateErrorsV1";
-import type {
-  EvaluateApiErrorV1,
-  EvaluateApiSuccessV1,
-  EvaluateRequestV1,
+import {
+  EVALUATE_SCHEMA_VERSION_V1,
+  type EvaluateApiErrorV1,
+  type EvaluateApiSuccessV1,
+  type EvaluateRequestV1,
 } from "../../../types/evaluate-v1";
 
 export const runtime = "nodejs";
 export const MAX_EVALUATE_BODY_BYTES_V1 = 2 * 1024;
 
 type EvaluateServicePortV1 = Pick<AtomicDemandStopServiceV1, "execute">;
+export type RequestIdFactoryV1 = () => string;
+
+export function createServerRequestIdV1(): string {
+  return `request:${randomUUID()}`;
+}
 
 function responseHeaders(additional: HeadersInit = {}): Headers {
   const headers = new Headers(additional);
@@ -29,6 +37,7 @@ function responseHeaders(additional: HeadersInit = {}): Headers {
 }
 
 function errorResponse(
+  requestId: string,
   error: unknown,
   additionalHeaders: HeadersInit = {}
 ): NextResponse<EvaluateApiErrorV1> {
@@ -36,7 +45,8 @@ function errorResponse(
 
   return NextResponse.json(
     {
-      success: false,
+      schemaVersion: EVALUATE_SCHEMA_VERSION_V1,
+      requestId,
       error: toEvaluateErrorValueV1(normalized),
     },
     {
@@ -63,11 +73,11 @@ function assertDeclaredBodySize(request: NextRequest): void {
   }
 
   if (!/^\d+$/.test(contentLength)) {
-    throw new EvaluateV1Error("INVALID_REQUEST");
+    throw new EvaluateV1Error("INVALID_JSON");
   }
 
   if (Number(contentLength) > MAX_EVALUATE_BODY_BYTES_V1) {
-    throw new EvaluateV1Error("PAYLOAD_TOO_LARGE");
+    throw new EvaluateV1Error("REQUEST_TOO_LARGE");
   }
 }
 
@@ -94,7 +104,7 @@ async function readBoundedBody(request: NextRequest): Promise<string> {
       byteLength += value.byteLength;
       if (byteLength > MAX_EVALUATE_BODY_BYTES_V1) {
         await reader.cancel().catch(() => undefined);
-        throw new EvaluateV1Error("PAYLOAD_TOO_LARGE");
+        throw new EvaluateV1Error("REQUEST_TOO_LARGE");
       }
 
       body += decoder.decode(value, { stream: true });
@@ -107,69 +117,119 @@ async function readBoundedBody(request: NextRequest): Promise<string> {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  record: Record<string, unknown>,
+  expectedKeys: readonly string[]
+): boolean {
+  return (
+    Object.keys(record).sort().join("|") ===
+    [...expectedKeys].sort().join("|")
+  );
+}
+
 async function parseRequest(request: NextRequest): Promise<EvaluateRequestV1> {
   assertJsonMediaType(request);
 
-  let body: string;
   let parsed: unknown;
 
   try {
-    body = await readBoundedBody(request);
-    parsed = JSON.parse(body) as unknown;
+    parsed = JSON.parse(await readBoundedBody(request)) as unknown;
   } catch (error) {
     if (isEvaluateV1Error(error)) {
       throw error;
     }
-    throw new EvaluateV1Error("INVALID_REQUEST");
+    throw new EvaluateV1Error("INVALID_JSON");
   }
+
+  if (!isRecord(parsed)) {
+    throw new EvaluateV1Error("INVALID_JSON");
+  }
+
+  const clientRequestId = parsed.clientRequestId;
+  const expectedRootKeys = parsed.clientRequestId === undefined
+    ? ["cubeState", "schemaVersion"]
+    : ["clientRequestId", "cubeState", "schemaVersion"];
 
   if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    Array.isArray(parsed)
+    !hasExactKeys(parsed, expectedRootKeys) ||
+    parsed.schemaVersion !== EVALUATE_SCHEMA_VERSION_V1 ||
+    !isRecord(parsed.cubeState) ||
+    !hasExactKeys(parsed.cubeState, ["facelets", "format"]) ||
+    typeof parsed.cubeState.format !== "string" ||
+    typeof parsed.cubeState.facelets !== "string" ||
+    ("clientRequestId" in parsed &&
+      (typeof clientRequestId !== "string" ||
+        clientRequestId.length < 1 ||
+        clientRequestId.length > 64))
   ) {
-    throw new EvaluateV1Error("INVALID_REQUEST");
+    throw new EvaluateV1Error("INVALID_JSON");
   }
 
-  const record = parsed as Record<string, unknown>;
-
-  if (
-    Object.keys(record).length !== 1 ||
-    !("facelets" in record) ||
-    typeof record.facelets !== "string"
-  ) {
-    throw new EvaluateV1Error("INVALID_REQUEST");
+  if (parsed.cubeState.format !== "URFDLB_FACELETS_V1") {
+    throw new EvaluateV1Error("INVALID_CUBE_STATE");
   }
 
-  return Object.freeze({ facelets: record.facelets });
+  const base = {
+    schemaVersion: EVALUATE_SCHEMA_VERSION_V1,
+    cubeState: Object.freeze({
+      format: "URFDLB_FACELETS_V1" as const,
+      facelets: parsed.cubeState.facelets,
+    }),
+  };
+
+  return Object.freeze(
+    clientRequestId === undefined
+      ? base
+      : { ...base, clientRequestId: clientRequestId as string }
+  );
 }
 
 export function createEvaluatePostHandlerV1(
-  service: EvaluateServicePortV1 = atomicDemandStopServiceV1
+  service: EvaluateServicePortV1 = atomicDemandStopServiceV1,
+  requestIdFactory: RequestIdFactoryV1 = createServerRequestIdV1
 ): (request: NextRequest) => Promise<NextResponse> {
   return async (request: NextRequest): Promise<NextResponse> => {
+    const requestId = requestIdFactory();
+
     try {
       const parsed = await parseRequest(request);
-      const data = await service.execute(parsed, { signal: request.signal });
-      const response: EvaluateApiSuccessV1 = { success: true, data };
+      const result = await service.execute(parsed, {
+        signal: request.signal,
+      });
+      const response: EvaluateApiSuccessV1 = {
+        schemaVersion: EVALUATE_SCHEMA_VERSION_V1,
+        requestId,
+        result,
+      };
 
       return NextResponse.json(response, {
         status: 200,
         headers: responseHeaders(),
       });
     } catch (error) {
-      return errorResponse(error);
+      return errorResponse(requestId, error);
     }
   };
 }
 
 export const POST = createEvaluatePostHandlerV1();
 
-function methodNotAllowed(): NextResponse<EvaluateApiErrorV1> {
-  return errorResponse(new EvaluateV1Error("METHOD_NOT_ALLOWED"), {
-    Allow: "POST",
-  });
+export function createMethodNotAllowedHandlerV1(
+  requestIdFactory: RequestIdFactoryV1 = createServerRequestIdV1
+): () => NextResponse<EvaluateApiErrorV1> {
+  return () =>
+    errorResponse(
+      requestIdFactory(),
+      new EvaluateV1Error("METHOD_NOT_ALLOWED"),
+      { Allow: "POST" }
+    );
 }
+
+const methodNotAllowed = createMethodNotAllowedHandlerV1();
 
 export const GET = methodNotAllowed;
 export const PUT = methodNotAllowed;

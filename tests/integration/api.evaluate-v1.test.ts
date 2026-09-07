@@ -6,26 +6,35 @@ import {
   MAX_EVALUATE_BODY_BYTES_V1,
   POST,
   createEvaluatePostHandlerV1,
+  createMethodNotAllowedHandlerV1,
 } from "../../src/app/api/evaluate/route";
 import { applyMoves } from "../../src/lib/cube/moves";
+import { createCubeFaceletStateV1 } from "../../src/lib/cube/cubeStateV1";
+import { EvaluatorPipeline } from "../../src/lib/evaluator/pipeline/EvaluatorPipeline";
 import {
   AtomicDemandStopServiceV1,
   type SolverV1Port,
 } from "../../src/lib/integration/AtomicDemandStopServiceV1";
+import { EvaluateV1Error } from "../../src/lib/integration/evaluateErrorsV1";
+import { SolutionTraceBuilderV1 } from "../../src/lib/integration/SolutionTraceBuilderV1";
 import { solverV1 } from "../../src/lib/solver/SolverV1";
 import { SolverV1Error } from "../../src/lib/solver/solverErrorsV1";
+import { verifySolutionV1 } from "../../src/lib/solver/solutionVerifierV1";
 import type {
+  EvaluateApiErrorV1,
   EvaluateApiResponseV1,
-  EvaluateErrorValueV1,
-  EvaluateSuccessV1,
+  EvaluateApiSuccessV1,
+  EvaluateErrorCodeV1,
 } from "../../src/types/evaluate-v1";
 import {
   SOLVED_FACELETS_V1,
   type CubeFaceletStateV1,
   type MoveV1,
-  type SolverErrorCodeV1,
   type SolverResultV1,
 } from "../../src/types/solver-v1";
+
+const REQUEST_ID = "request:server-owned";
+const BUILD_COMMIT = "b".repeat(40);
 
 function requestFromText(
   body: string,
@@ -46,30 +55,46 @@ function jsonRequest(body: unknown): NextRequest {
   return requestFromText(JSON.stringify(body));
 }
 
-async function successBody(response: Response): Promise<EvaluateSuccessV1> {
-  const body = (await response.json()) as EvaluateApiResponseV1;
+function apiRequest(facelets = SOLVED_FACELETS_V1): Record<string, unknown> {
+  return {
+    schemaVersion: "1.0",
+    cubeState: {
+      format: "URFDLB_FACELETS_V1",
+      facelets,
+    },
+  };
+}
 
-  if (!body.success) {
+async function responseBody(response: Response): Promise<EvaluateApiResponseV1> {
+  return (await response.json()) as EvaluateApiResponseV1;
+}
+
+async function successBody(response: Response): Promise<EvaluateApiSuccessV1> {
+  const body = await responseBody(response);
+
+  if (!("result" in body)) {
     throw new Error(`Expected success, received ${body.error.code}`);
   }
 
-  return body.data;
+  return body;
 }
 
-async function errorBody(response: Response): Promise<EvaluateErrorValueV1> {
-  const body = (await response.json()) as EvaluateApiResponseV1;
+async function errorBody(response: Response): Promise<EvaluateApiErrorV1> {
+  const body = await responseBody(response);
 
-  if (body.success) {
+  if (!("error" in body)) {
     throw new Error("Expected an error response");
   }
 
-  expect(body).not.toHaveProperty("data");
-  return body.error;
+  expect(body).not.toHaveProperty("result");
+  return body;
 }
 
 function resultFor(
   input: CubeFaceletStateV1,
-  moves: readonly MoveV1[]
+  moves: readonly MoveV1[],
+  durationMs = 7,
+  cacheHit = false
 ): SolverResultV1 {
   return {
     solverRunId: `solver-run:${input.stateId}:${moves.join("-")}`,
@@ -86,14 +111,118 @@ function resultFor(
       0
     ),
     verified: true,
-    cache: { hit: false, keyVersion: "1" },
-    durationMs: 1,
+    cache: { hit: cacheHit, keyVersion: "1" },
+    durationMs,
   };
 }
 
 function solverReturning(moves: readonly MoveV1[]): SolverV1Port {
   return {
     solve: vi.fn(async (input) => resultFor(input, moves)),
+  };
+}
+
+function handlerFor(
+  service: AtomicDemandStopServiceV1
+): ReturnType<typeof createEvaluatePostHandlerV1> {
+  return createEvaluatePostHandlerV1(service, () => REQUEST_ID);
+}
+
+function exactSuccessFixture(
+  input: CubeFaceletStateV1,
+  solverResult: SolverResultV1
+): EvaluateApiSuccessV1 {
+  const verified = verifySolutionV1(input, solverResult.moves);
+  const builtTrace = new SolutionTraceBuilderV1().build(
+    input,
+    solverResult,
+    verified
+  );
+  const domainDemand = new EvaluatorPipeline().advanceToDemand({
+    kind: "UNOBSERVED_HUMAN_STATE",
+    executionId: builtTrace.executionId,
+    solutionTraceId: builtTrace.solutionTraceId,
+    solutionTransitionIds: builtTrace.solutionTransitions.map(
+      (transition) => transition.transitionId
+    ),
+    humanStateBoundaries:
+      builtTrace.humanStateObservationBoundaries,
+  });
+  const transitionTrace = {
+    schemaId: builtTrace.schemaId,
+    schemaVersion: builtTrace.schemaVersion,
+    executionId: builtTrace.executionId,
+    solutionId: builtTrace.solutionId,
+    cubeStateBoundaries: builtTrace.cubeStateBoundaries,
+    solutionTransitions: builtTrace.solutionTransitions,
+    humanStateObservationBoundaries:
+      builtTrace.humanStateObservationBoundaries,
+  } as const;
+
+  return {
+    schemaVersion: "1.0",
+    requestId: REQUEST_ID,
+    result: {
+      cubeState: {
+        stateId: input.stateId,
+        format: "URFDLB_FACELETS_V1",
+      },
+      solution: {
+        solutionId: transitionTrace.solutionId,
+        moves: verified.moves,
+        htm: verified.htm,
+        qtm: verified.qtm,
+        verified: true,
+        solver: {
+          solverRunId: solverResult.solverRunId,
+          id: "cubejs",
+          version: "1.3.2",
+          adapterVersion: "1.0",
+          cacheHit: solverResult.cache.hit,
+          cacheKeyVersion: "1",
+        },
+      },
+      transitionTrace,
+      domainDemand,
+      downstreamAvailability: {
+        schemaId: "DownstreamAvailabilityV1",
+        schemaVersion: "1.0",
+        demandArtifactId: domainDemand.artifactId,
+        demandSchemaId: "SPEC-DM-001",
+        demandSchemaVersion: "1.0",
+        provenance: {
+          executionId: transitionTrace.executionId,
+          release: "2026-09-10-rc",
+          buildCommit: BUILD_COMMIT,
+        },
+        entropy: {
+          status: "NOT_SEMANTICALLY_AVAILABLE",
+          reason: "ENTROPY_SEMANTICS_UNCLOSED",
+        },
+        interpretation: {
+          status: "NOT_SEMANTICALLY_AVAILABLE",
+          reason: "ENTROPY_SEMANTICS_UNCLOSED",
+        },
+        evaluation: {
+          status: "NOT_SEMANTICALLY_AVAILABLE",
+          reason: "ENTROPY_SEMANTICS_UNCLOSED",
+        },
+      },
+      warnings: [
+        {
+          code: "HUMAN_STATE_NOT_OBSERVED",
+          executionId: transitionTrace.executionId,
+          transitionIds: transitionTrace.solutionTransitions.map(
+            (transition) => transition.transitionId
+          ),
+        },
+      ],
+      timings: { solverDurationMs: solverResult.durationMs },
+      build: {
+        release: "2026-09-10-rc",
+        commit: BUILD_COMMIT,
+      },
+    },
   };
 }
 
@@ -111,201 +240,399 @@ afterAll(async () => {
   await solverV1.close();
 });
 
-describe("C3 POST /api/evaluate", () => {
+describe("C3R POST /api/evaluate", () => {
   it(
-    "C3-01 executes the real verified SolverV1 through ordered Demand",
+    "runs the real SolverV1 and returns verified status-only Demand",
     async () => {
-      const facelets = applyMoves(SOLVED_FACELETS_V1, ["R", "U"]);
-      const response = await POST(jsonRequest({ facelets }));
-      const data = await successBody(response);
+      const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+      const response = await POST(jsonRequest(apiRequest(facelets)));
+      const body = await successBody(response);
 
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("no-store");
-      expect(data.semanticStop).toBe("DEMAND");
-      expect(data.solver).toMatchObject({
-        inputStateId: data.input.stateId,
+      expect(body.schemaVersion).toBe("1.0");
+      expect(body.requestId).toMatch(/^request:/);
+      expect(body.result.solution).toMatchObject({
         verified: true,
-        engine: { id: "cubejs", version: "1.3.2", adapterVersion: "1.0" },
+        solver: {
+          id: "cubejs",
+          version: "1.3.2",
+          adapterVersion: "1.0",
+          cacheKeyVersion: "1",
+        },
       });
-      expect(data.transitionTrace.count).toBe(data.solver.moves.length);
-      expect(data.transitionTrace.transitionIds).toEqual(
-        data.demand.executionEpisode.transitionRefs.map(
-          (reference) => reference.transitionId
-        )
-      );
-      expect(data.demand).toMatchObject({
+      expect(body.result.domainDemand).toMatchObject({
         schemaId: "SPEC-DM-001",
         schemaVersion: "1.0",
         architecture: "P-C",
-        claimClass: "T3_BOUNDED_DOMAIN_DEMAND",
       });
-      expect(data.downstreamAvailability).toMatchObject({
-        demandArtifactId: data.demand.artifactId,
-        entropy: {
-          status: "NOT_SEMANTICALLY_AVAILABLE",
-          reason: "ENTROPY_SEMANTICS_UNCLOSED",
-        },
-        interpretation: {
-          status: "NOT_SEMANTICALLY_AVAILABLE",
-          reason: "ENTROPY_SEMANTICS_UNCLOSED",
-        },
-        evaluation: {
-          status: "NOT_SEMANTICALLY_AVAILABLE",
-          reason: "ENTROPY_SEMANTICS_UNCLOSED",
-        },
-      });
+      expect(body.result.domainDemand.executionEpisode.transitionRefs).toEqual(
+        []
+      );
     },
     20_000
   );
 
-  it("C3-02 exposes solved input as an atomic status-only success", async () => {
-    const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning([]),
-    });
-    const handler = createEvaluatePostHandlerV1(service);
-    const response = await handler(
-      jsonRequest({ facelets: SOLVED_FACELETS_V1 })
-    );
-    const data = await successBody(response);
-
-    expect(response.status).toBe(200);
-    expect(data.solver).toMatchObject({ moves: [], verified: true });
-    expect(data.transitionTrace.count).toBe(0);
-    for (const channel of Object.values(
-      data.demand.executionEpisode.t3Consequences
-    )) {
-      expect(channel.propositionRecords).toEqual([]);
-      expect(channel.statusOnlyRecord?.status).toBe("NOT_OBSERVED");
-      expect(channel.statusOnlyRecord).not.toHaveProperty("value");
-    }
-  });
-
-  it("C3-03 rejects malformed boundaries without calling the solver", async () => {
+  it("C3R-03 accepts only the exact request contract", async () => {
     const solver = solverReturning([]);
-    const handler = createEvaluatePostHandlerV1(
-      new AtomicDemandStopServiceV1({ solver })
+    const handler = handlerFor(
+      new AtomicDemandStopServiceV1({
+        solver,
+        buildCommit: BUILD_COMMIT,
+      })
     );
-    const cases: Array<{
-      request: NextRequest;
-      status: number;
-      code: string;
-    }> = [
+    const validCases = [
+      apiRequest(),
+      { ...apiRequest(), clientRequestId: "x" },
+      { ...apiRequest(), clientRequestId: "x".repeat(64) },
+    ];
+
+    for (const valid of validCases) {
+      const response = await handler(jsonRequest(valid));
+      expect(response.status).toBe(200);
+      expect(await successBody(response)).toMatchObject({
+        schemaVersion: "1.0",
+        requestId: REQUEST_ID,
+      });
+    }
+
+    const invalidCases: unknown[] = [
+      { ...apiRequest(), clientRequestId: "" },
+      { ...apiRequest(), clientRequestId: "x".repeat(65) },
+      { ...apiRequest(), schemaVersion: "2.0" },
+      { schemaVersion: "1.0" },
+      { cubeState: apiRequest().cubeState },
+      { ...apiRequest(), unknown: true },
       {
-        request: requestFromText("{"),
-        status: 400,
-        code: "INVALID_REQUEST",
-      },
-      {
-        request: jsonRequest({
+        ...apiRequest(),
+        cubeState: {
+          format: "URFDLB_FACELETS_V1",
           facelets: SOLVED_FACELETS_V1,
           unknown: true,
-        }),
-        status: 400,
-        code: "INVALID_REQUEST",
-      },
-      {
-        request: jsonRequest({ facelets: "short" }),
-        status: 400,
-        code: "INVALID_CUBE_STATE",
-      },
-      {
-        request: requestFromText(
-          JSON.stringify({ facelets: SOLVED_FACELETS_V1 }),
-          "text/plain"
-        ),
-        status: 415,
-        code: "UNSUPPORTED_MEDIA_TYPE",
-      },
-      {
-        request: requestFromText(
-          JSON.stringify({ padding: "x".repeat(MAX_EVALUATE_BODY_BYTES_V1) })
-        ),
-        status: 413,
-        code: "PAYLOAD_TOO_LARGE",
+        },
       },
     ];
 
-    for (const testCase of cases) {
-      const response = await handler(testCase.request);
-      const error = await errorBody(response);
+    for (const invalid of invalidCases) {
+      const response = await handler(jsonRequest(invalid));
+      const body = await errorBody(response);
 
-      expect(response.status).toBe(testCase.status);
-      expect(error.code).toBe(testCase.code);
-      expect(Object.keys(error)).toEqual(["code", "message", "retryable"]);
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({
+        schemaVersion: "1.0",
+        requestId: REQUEST_ID,
+        error: {
+          code: "INVALID_JSON",
+          stage: "REQUEST",
+          retryable: false,
+        },
+      });
     }
 
-    expect(solver.solve).not.toHaveBeenCalled();
+    const wrongFormat = await handler(
+      jsonRequest({
+        ...apiRequest(),
+        cubeState: {
+          format: "OTHER",
+          facelets: SOLVED_FACELETS_V1,
+        },
+      })
+    );
+    expect(wrongFormat.status).toBe(422);
+    expect((await errorBody(wrongFormat)).error).toMatchObject({
+      code: "INVALID_CUBE_STATE",
+      stage: "VALIDATION",
+      retryable: false,
+    });
 
-    const methodResponse = GET();
-    const methodError = await errorBody(methodResponse);
-    expect(methodResponse.status).toBe(405);
-    expect(methodResponse.headers.get("allow")).toBe("POST");
-    expect(methodError.code).toBe("METHOD_NOT_ALLOWED");
+    expect(solver.solve).toHaveBeenCalledTimes(validCases.length);
   });
 
-  it("C3-04 maps a physically unsolvable cube to 422 before solve", async () => {
-    const solver = solverReturning([]);
-    const handler = createEvaluatePostHandlerV1(
-      new AtomicDemandStopServiceV1({ solver })
+  it("clientRequestId cannot control the server-owned requestId", async () => {
+    const clientRequestId = "request:client-selected";
+    const handler = handlerFor(
+      new AtomicDemandStopServiceV1({
+        solver: solverReturning([]),
+        buildCommit: BUILD_COMMIT,
+      })
     );
     const response = await handler(
-      jsonRequest({ facelets: twistedCorner() })
+      jsonRequest({ ...apiRequest(), clientRequestId })
     );
-    const error = await errorBody(response);
+    const body = await successBody(response);
 
-    expect(response.status).toBe(422);
-    expect(error.code).toBe("UNSOLVABLE_CUBE");
-    expect(solver.solve).not.toHaveBeenCalled();
+    expect(body.requestId).toBe(REQUEST_ID);
+    expect(body.requestId).not.toBe(clientRequestId);
+    expect(JSON.stringify(body.result)).not.toContain(clientRequestId);
+  });
+
+  it("C3R-08 keeps semantic IDs stable across all operational variance", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    let solverCall = 0;
+    let requestCall = 0;
+    const service = new AtomicDemandStopServiceV1({
+      solver: {
+        solve: vi.fn(async (input) => {
+          solverCall += 1;
+          return resultFor(
+            input,
+            ["R'"],
+            solverCall,
+            solverCall % 2 === 0
+          );
+        }),
+      },
+      buildCommit: BUILD_COMMIT,
+    });
+    const handler = createEvaluatePostHandlerV1(
+      service,
+      () => `request:server-${++requestCall}`
+    );
+    const first = await successBody(
+      await handler(
+        jsonRequest({ ...apiRequest(facelets), clientRequestId: "client-a" })
+      )
+    );
+    const second = await successBody(
+      await handler(
+        jsonRequest({ ...apiRequest(facelets), clientRequestId: "client-b" })
+      )
+    );
+    const ids = (body: EvaluateApiSuccessV1) => ({
+      stateId: body.result.cubeState.stateId,
+      solutionId: body.result.solution.solutionId,
+      executionId: body.result.transitionTrace.executionId,
+      cubeBoundaryIds: body.result.transitionTrace.cubeStateBoundaries.map(
+        (boundary) => boundary.boundaryId
+      ),
+      transitionIds: body.result.transitionTrace.solutionTransitions.map(
+        (transition) => transition.transitionId
+      ),
+      moveEventIds: body.result.transitionTrace.solutionTransitions.map(
+        (transition) => transition.moveEventId
+      ),
+      humanBoundaryIds:
+        body.result.transitionTrace.humanStateObservationBoundaries.map(
+          (boundary) => boundary.boundaryId
+        ),
+      demandArtifactId: body.result.domainDemand.artifactId,
+      demandStatusIds: Object.values(
+        body.result.domainDemand.executionEpisode.t3Consequences
+      ).map((channel) => channel.statusOnlyRecord?.statusRecordId),
+    });
+
+    expect(first.requestId).not.toBe(second.requestId);
+    expect(first.result.timings).not.toEqual(second.result.timings);
+    expect(first.result.solution.solver.cacheHit).not.toBe(
+      second.result.solution.solver.cacheHit
+    );
+    expect(ids(first)).toEqual(ids(second));
+  });
+
+  it("C3R-04 returns the deep exact success envelope", async () => {
+    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
+    const moves: readonly MoveV1[] = ["R'"];
+    const input = createCubeFaceletStateV1(facelets);
+    const solverResult = resultFor(input, moves);
+    const service = new AtomicDemandStopServiceV1({
+      solver: { solve: vi.fn(async () => solverResult) },
+      buildCommit: BUILD_COMMIT,
+    });
+    const response = await handlerFor(service)(jsonRequest(apiRequest(facelets)));
+
+    expect(await responseBody(response)).toEqual(
+      exactSuccessFixture(input, solverResult)
+    );
+  });
+
+  it("C3R-07 returns the deep exact solved-cube success fixture", async () => {
+    const input = createCubeFaceletStateV1(SOLVED_FACELETS_V1);
+    const solverResult = resultFor(input, []);
+    const service = new AtomicDemandStopServiceV1({
+      solver: { solve: vi.fn(async () => solverResult) },
+      buildCommit: BUILD_COMMIT,
+    });
+    const response = await handlerFor(service)(jsonRequest(apiRequest()));
+    const expected = exactSuccessFixture(input, solverResult);
+
+    expect(await responseBody(response)).toEqual(expected);
+    expect(expected.result.solution).toMatchObject({
+      moves: [],
+      htm: 0,
+      qtm: 0,
+    });
+    expect(expected.result.transitionTrace.solutionTransitions).toEqual([]);
+    expect(expected.result.transitionTrace.cubeStateBoundaries).toHaveLength(1);
+    expect(
+      expected.result.transitionTrace.humanStateObservationBoundaries
+    ).toHaveLength(1);
   });
 
   it.each([
-    ["SOLVER_UNAVAILABLE", 503],
-    ["SOLVER_TIMEOUT", 504],
-    ["INTERNAL_FAILURE", 500],
+    ["INVALID_JSON", 400, "REQUEST", false],
+    ["REQUEST_TOO_LARGE", 413, "REQUEST", false],
+    ["UNSUPPORTED_MEDIA_TYPE", 415, "REQUEST", false],
+    ["METHOD_NOT_ALLOWED", 405, "REQUEST", false],
+    ["INVALID_CUBE_STATE", 422, "VALIDATION", false],
+    ["UNSOLVABLE_CUBE", 422, "VALIDATION", false],
+    ["SOLVER_UNAVAILABLE", 503, "SOLVER", true],
+    ["SOLVER_TIMEOUT", 504, "SOLVER", true],
+    ["SOLUTION_VERIFICATION_FAILED", 502, "VERIFICATION", true],
+    ["TRANSITION_GENERATION_FAILED", 500, "TRANSITION", false],
+    ["DEMAND_CONTRACT_FAILED", 500, "DEMAND", false],
+    ["INTERNAL_FAILURE", 500, "INTERNAL", false],
   ] as const)(
-    "C3-05 maps %s atomically to %i",
-    async (code: SolverErrorCodeV1, status) => {
-      const service = new AtomicDemandStopServiceV1({
-        solver: {
-          solve: vi.fn(async () => {
-            throw new SolverV1Error(code);
-          }),
+    "C3R-05 maps %s to its exact public contract",
+    async (code, httpStatus, stage, retryable) => {
+      const service = {
+        execute: vi.fn(async () => {
+          throw new EvaluateV1Error(code as EvaluateErrorCodeV1);
+        }),
+      };
+      const response = await createEvaluatePostHandlerV1(
+        service,
+        () => REQUEST_ID
+      )(jsonRequest(apiRequest()));
+      const body = await errorBody(response);
+
+      expect(response.status).toBe(httpStatus);
+      expect(body).toEqual({
+        schemaVersion: "1.0",
+        requestId: REQUEST_ID,
+        error: {
+          code,
+          message: expect.any(String),
+          stage,
+          retryable,
         },
       });
-      const response = await createEvaluatePostHandlerV1(service)(
-        jsonRequest({ facelets: SOLVED_FACELETS_V1 })
-      );
-      const error = await errorBody(response);
-
-      expect(response.status).toBe(status);
-      expect(error.code).toBe(code);
+      expect(Object.keys(body.error)).toEqual([
+        "code",
+        "message",
+        "stage",
+        "retryable",
+      ]);
     }
   );
 
-  it("C3-05 hides unknown solver internals behind a closed 500", async () => {
+  it("exercises malformed, oversized, media-type, and method request paths", async () => {
+    const service = new AtomicDemandStopServiceV1({
+      solver: solverReturning([]),
+      buildCommit: BUILD_COMMIT,
+    });
+    const handler = handlerFor(service);
+    const cases = [
+      [requestFromText("{"), 400, "INVALID_JSON"],
+      [
+        requestFromText(
+          JSON.stringify({ padding: "x".repeat(MAX_EVALUATE_BODY_BYTES_V1) })
+        ),
+        413,
+        "REQUEST_TOO_LARGE",
+      ],
+      [
+        requestFromText(JSON.stringify(apiRequest()), "text/plain"),
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
+      ],
+    ] as const;
+
+    for (const [request, status, code] of cases) {
+      const response = await handler(request);
+      const body = await errorBody(response);
+      expect(response.status).toBe(status);
+      expect(body.error.code).toBe(code);
+      expect(body.requestId).toBe(REQUEST_ID);
+    }
+
+    const methodResponse = createMethodNotAllowedHandlerV1(
+      () => REQUEST_ID
+    )();
+    const methodBody = await errorBody(methodResponse);
+    expect(methodResponse.status).toBe(405);
+    expect(methodResponse.headers.get("allow")).toBe("POST");
+    expect(methodBody.error).toMatchObject({
+      code: "METHOD_NOT_ALLOWED",
+      stage: "REQUEST",
+      retryable: false,
+    });
+
+    const defaultMethodResponse = GET();
+    expect(defaultMethodResponse.status).toBe(405);
+  });
+
+  it("maps invalid and physically unsolvable cubes to closed 422 errors", async () => {
+    const solver = solverReturning([]);
+    const handler = handlerFor(
+      new AtomicDemandStopServiceV1({
+        solver,
+        buildCommit: BUILD_COMMIT,
+      })
+    );
+
+    for (const [facelets, code] of [
+      ["short", "INVALID_CUBE_STATE"],
+      [twistedCorner(), "UNSOLVABLE_CUBE"],
+    ] as const) {
+      const response = await handler(jsonRequest(apiRequest(facelets)));
+      const body = await errorBody(response);
+
+      expect(response.status).toBe(422);
+      expect(body.error.code).toBe(code);
+      expect(body.error.stage).toBe("VALIDATION");
+    }
+
+    expect(solver.solve).not.toHaveBeenCalled();
+  });
+
+  it("hides malformed worker exceptions and returns no partial result", async () => {
     const service = new AtomicDemandStopServiceV1({
       solver: {
         solve: vi.fn(async () => {
           throw new Error("/private/worker.ts: engine stderr");
         }),
       },
+      buildCommit: BUILD_COMMIT,
     });
-    const response = await createEvaluatePostHandlerV1(service)(
-      jsonRequest({ facelets: SOLVED_FACELETS_V1 })
-    );
-    const error = await errorBody(response);
+    const response = await handlerFor(service)(jsonRequest(apiRequest()));
+    const body = await errorBody(response);
+    const serialized = JSON.stringify(body);
 
     expect(response.status).toBe(500);
-    expect(error).toEqual({
+    expect(body.error).toEqual({
       code: "INTERNAL_FAILURE",
       message: "The evaluation request could not be completed.",
-      retryable: true,
+      stage: "INTERNAL",
+      retryable: false,
     });
-    expect(JSON.stringify(error)).not.toContain("/private/worker.ts");
-    expect(JSON.stringify(error)).not.toContain("stderr");
+    expect(serialized).not.toContain("/private/worker.ts");
+    expect(serialized).not.toContain("stderr");
+    expect(body).not.toHaveProperty("result");
   });
 
-  it("propagates cancellation and never reuses a stale success", async () => {
+  it("maps real solver failures without partial success", async () => {
+    for (const [code, status] of [
+      ["SOLVER_UNAVAILABLE", 503],
+      ["SOLVER_TIMEOUT", 504],
+    ] as const) {
+      const service = new AtomicDemandStopServiceV1({
+        solver: {
+          solve: vi.fn(async () => {
+            throw new SolverV1Error(code);
+          }),
+        },
+        buildCommit: BUILD_COMMIT,
+      });
+      const response = await handlerFor(service)(jsonRequest(apiRequest()));
+      const body = await errorBody(response);
+
+      expect(response.status).toBe(status);
+      expect(body.error.code).toBe(code);
+      expect(body).not.toHaveProperty("result");
+    }
+  });
+
+  it("propagates cancellation and does not reuse stale success", async () => {
     let calls = 0;
     const solver: SolverV1Port = {
       solve: vi.fn(async (input, options) => {
@@ -319,15 +646,14 @@ describe("C3 POST /api/evaluate", () => {
         throw new SolverV1Error("SOLVER_UNAVAILABLE");
       }),
     };
-    const handler = createEvaluatePostHandlerV1(
-      new AtomicDemandStopServiceV1({ solver })
+    const handler = handlerFor(
+      new AtomicDemandStopServiceV1({
+        solver,
+        buildCommit: BUILD_COMMIT,
+      })
     );
-    const firstResponse = await handler(
-      jsonRequest({ facelets: SOLVED_FACELETS_V1 })
-    );
-    const first = await successBody(firstResponse);
-
-    expect(first.semanticStop).toBe("DEMAND");
+    const first = await handler(jsonRequest(apiRequest()));
+    expect(first.status).toBe(200);
 
     const controller = new AbortController();
     controller.abort();
@@ -335,46 +661,16 @@ describe("C3 POST /api/evaluate", () => {
       "http://localhost/api/evaluate",
       {
         method: "POST",
-        body: JSON.stringify({ facelets: SOLVED_FACELETS_V1 }),
+        body: JSON.stringify(apiRequest()),
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
       }
     );
-    const failedResponse = await handler(cancelledRequest);
-    const failed = await errorBody(failedResponse);
+    const failed = await handler(cancelledRequest);
+    const failedBody = await errorBody(failed);
 
-    expect(failedResponse.status).toBe(503);
-    expect(failed.code).toBe("SOLVER_UNAVAILABLE");
+    expect(failed.status).toBe(503);
+    expect(failedBody.error.code).toBe("SOLVER_UNAVAILABLE");
     expect(calls).toBe(2);
-  });
-
-  it.each([
-    [
-      "TRANSITION_FAILED",
-      {
-        transitionGenerator: () => {
-          throw new Error("transition failure");
-        },
-      },
-    ],
-    [
-      "DEMAND_CONTRACT_FAILED",
-      {
-        demandProducer: () => ({ artifactId: "malformed" }),
-      },
-    ],
-  ] as const)("C3-07/08 returns no partial payload for %s", async (code, fault) => {
-    const facelets = applyMoves(SOLVED_FACELETS_V1, ["R"]);
-    const service = new AtomicDemandStopServiceV1({
-      solver: solverReturning(["R'"]),
-      ...fault,
-    });
-    const response = await createEvaluatePostHandlerV1(service)(
-      jsonRequest({ facelets })
-    );
-    const error = await errorBody(response);
-
-    expect(response.status).toBe(500);
-    expect(error.code).toBe(code);
   });
 });
