@@ -17,6 +17,7 @@ import {
   invertMoves,
   cancelMoves,
   SOLVED_STATE,
+  type Color,
 } from '@/lib/cube/cube'
 import {
   serializeCubeState,
@@ -139,9 +140,9 @@ describe('isValidCubeState', () => {
     // 面Uのセンター(index 4)を変えた状態は色数が崩れる
     const invalid = {
       ...SOLVED_STATE,
-      U: [...SOLVED_STATE.U] as any,
+      U: [...SOLVED_STATE.U] as Color[],
     }
-    invalid.U[4] = 'R' as any // U面のセンターを赤に変更
+    invalid.U[4] = 'R' // U面のセンターを赤に変更
     expect(isValidCubeState(invalid)).toBe(false)
   })
 })

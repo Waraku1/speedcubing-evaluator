@@ -56,31 +56,6 @@ const VALID_MOVES =
   new Set<Move>(ALL_MOVES);
 
 // ─────────────────────────────────────────────────────────────
-// Move helpers
-// ─────────────────────────────────────────────────────────────
-
-function invertMove(
-  move: Move
-): Move {
-
-  if (
-    move.endsWith("2")
-  ) {
-    return move;
-  }
-
-  if (
-    move.endsWith("'")
-  ) {
-    return move[0] as Move;
-  }
-
-  return (
-    move + "'"
-  ) as Move;
-}
-
-// ─────────────────────────────────────────────────────────────
 // Compression
 // ─────────────────────────────────────────────────────────────
 

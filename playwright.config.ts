@@ -1,15 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
-import path from 'path'
 
 /**
  * Playwright E2E テスト設定
  *
- * 問題点: 認証フローを毎回テストするのは遅く不安定。
- *
- * 解決方針:
- *   - storageState でセッションを保存・再利用
- *   - グローバルセットアップで1回だけログインしてセッションを保存
- *   - 認証済みテストはセッションを読み込んで即利用
+ * 現在サポートされている公開ワークベンチを認証なしで検証する。
  */
 export default defineConfig({
   testDir: './tests/e2e',
@@ -30,29 +24,11 @@ export default defineConfig({
   },
 
   projects: [
-    // ── 認証セットアップ（他テストの前に実行） ──────────────────────────
-    {
-      name: 'setup',
-      testMatch: /.*\.setup\.ts/,
-    },
-
     // ── 認証不要テスト ─────────────────────────────────────────────────
     {
       name: 'unauthenticated',
       testMatch: /.*\.e2e\.ts/,
       use: { ...devices['Desktop Chrome'] },
-    },
-
-    // ── 認証済みテスト ─────────────────────────────────────────────────
-    {
-      name: 'authenticated',
-      testMatch: /.*\.auth\.e2e\.ts/,
-      dependencies: ['setup'],
-      use: {
-        ...devices['Desktop Chrome'],
-        // グローバルセットアップで保存したセッションを利用
-        storageState: path.resolve(__dirname, 'tests/e2e/.auth/user.json'),
-      },
     },
   ],
 
