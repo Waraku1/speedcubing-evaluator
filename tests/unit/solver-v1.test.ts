@@ -390,11 +390,13 @@ describe("Production SolverV1", () => {
 
     const timeoutPool = new CubeJsWorkerPoolV1({
       maxWorkers: 1,
-      deadlineMs: 30,
+      deadlineMs: 500,
       workerFactory: neverReplyingWorkerFactory(),
     });
 
-    await expectSolverCode(timeoutPool.solve("timeout"), "SOLVER_TIMEOUT");
+    const timedOut = timeoutPool.solve("timeout");
+    await waitFor(() => timeoutPool.stats().activeJobs === 1);
+    await expectSolverCode(timedOut, "SOLVER_TIMEOUT");
     await waitFor(() => timeoutPool.stats().workerReplacements === 1);
     await timeoutPool.close();
   });
