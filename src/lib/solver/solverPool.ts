@@ -16,8 +16,8 @@
 import { Worker } from 'worker_threads'
 import { cpus } from 'os'
 import path from 'path'
-import { LRUCache } from '@/server/lib/cache/lruCache'
-import { AppError } from '@/server/lib/errors'
+import { LRUCache } from './lruCache'
+import { AppError } from './errors'
 import type { SolveResponse } from '@/types/api'
 
 // ── 定数（設計で決定済み、変更禁止） ──────────────────────────────────────

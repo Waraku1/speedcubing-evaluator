@@ -42,9 +42,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     })
 
     // セッションクッキーをセット
-    const cookieName = process.env.NODE_ENV === 'production'
-      ? '__Secure-next-auth.session-token'
-      : 'next-auth.session-token'
+    // This branch is reachable only in NODE_ENV=test (guarded above).
+    const cookieName = 'next-auth.session-token'
 
     const res = NextResponse.redirect(new URL('/', req.url))
     res.cookies.set(cookieName, token, {
