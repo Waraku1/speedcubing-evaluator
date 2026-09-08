@@ -1,5 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import {
+  C6_LONG_SOLUTION_MOVES,
+  createC6LargeTraceFixture,
+  createC6LongSolutionFixture,
+  createC6NonSolvedFixture,
+  createC6SolvedFixture,
+} from "../fixtures/c6PresentationFixtures";
+
 const COMMIT = "b".repeat(40);
 const SOLVED_FACELETS =
   "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB";
@@ -113,7 +121,14 @@ function closedSuccessFixture() {
               statusOnlyRecord: statusOnly("continuity"),
             },
           },
-          sourceVersionManifest: [],
+          sourceVersionManifest: [
+            {
+              sourceVersionId: "source:e2e",
+              sourceName: "C4 E2E Human-State source",
+              sourceVersion: "1.0",
+              role: "HUMAN_STATE_SOURCE",
+            },
+          ],
         },
         t1Plane: {
           planeId: "plane:t1",
@@ -174,6 +189,28 @@ async function loadSolvedExample(page: Page): Promise<void> {
       .getByRole("region", { name: "Enter the cube state" })
       .getByText("Ready for server validation", { exact: true })
   ).toBeVisible();
+}
+
+async function routeEvaluationFixture(
+  page: Page,
+  fixture: Record<string, unknown>
+): Promise<{ count: number }> {
+  const requests = { count: 0 };
+
+  await page.route("**/api/evaluate", async (route) => {
+    requests.count += 1;
+    await route.fulfill({ json: fixture, status: 200 });
+  });
+
+  return requests;
+}
+
+async function runFixtureEvaluation(page: Page): Promise<void> {
+  await loadSolvedExample(page);
+  await page.getByRole("button", { name: "Run evaluation" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Evaluation result", level: 2 })
+  ).toBeFocused();
 }
 
 test.describe("C4 manual evaluator workbench", () => {
@@ -290,7 +327,7 @@ test.describe("C4 manual evaluator workbench", () => {
       "Solving and generating Demand"
     );
     await run.evaluate((button: HTMLButtonElement) => button.click());
-    await expect(page.getByRole("heading", { name: "Analysis received" })).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Evaluation result" })).toBeFocused();
     expect(requestCount).toBe(1);
     await expect(page.getByTestId("result-shell")).not.toContainText("{");
   });
@@ -457,6 +494,246 @@ test.describe("C4 manual evaluator workbench", () => {
     await expect(page.getByTestId("result-shell")).toHaveCount(0);
   });
 
+  test("C6-01 renders one complete verified result from one response", async ({ page }) => {
+    const requests = await routeEvaluationFixture(
+      page,
+      createC6NonSolvedFixture()
+    );
+
+    await runFixtureEvaluation(page);
+
+    expect(requests.count).toBe(1);
+    await expect(
+      page.getByRole("heading", { name: "Verified solution", level: 3 })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Domain Demand", level: 3 })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Downstream availability", level: 3 })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Trace and provenance", level: 3 })
+    ).toBeVisible();
+  });
+
+  test("C6-02 renders the solved case without inventing Demand values", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const solution = page.getByRole("region", { name: "Verified solution" });
+    await expect(solution.getByText("No moves required", { exact: true })).toBeVisible();
+    await expect(solution.getByText("HTM", { exact: true })).toBeVisible();
+    await expect(solution.getByText("QTM", { exact: true })).toBeVisible();
+    await expect(solution.locator("dd")).toHaveText(["0", "0"]);
+
+    const channels = page.getByTestId("demand-channel-sequence");
+    await expect(channels.getByTestId("status-only-channel")).toHaveCount(4);
+    await expect(channels.getByText(/^0$/)).toHaveCount(0);
+  });
+
+  test("C6-03 preserves the canonical vertical channel order and status-only treatment", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const channels = page.getByTestId("demand-channel-sequence");
+    await expect(channels.locator("h4")).toHaveText([
+      "Grip",
+      "Finger",
+      "Orientation",
+      "Continuity",
+    ]);
+    await expect(channels.locator('[data-status="NOT_OBSERVED"]')).toHaveCount(4);
+    await expect(
+      channels.getByText("No Human-State source was provided for this execution.", {
+        exact: true,
+      })
+    ).toHaveCount(4);
+  });
+
+  test("C6-04 excludes prohibited aggregate, ranking, and human-evidence claims", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6NonSolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const resultText = await page.getByTestId("result-shell").innerText();
+    expect(resultText).not.toMatch(
+      /total Demand|Demand score|overall score|percentage|normalized percentage|rank(?:ing)?|best solution|quality score|weighted average|common scale|common progress bar|radar chart|four comparable magnitude cards|Entropy value|Interpretation value|Evaluation value|H-OR2|certainty as Orientation Demand|Move evaluation|Move difficulty|DemandVector|fingerDemand|gripDemand|orientationDemand|continuityDemand/i
+    );
+    expect(resultText).toContain(
+      "Verified moves are solution provenance and do not constitute observed human execution."
+    );
+  });
+
+  test("C6-05 reports the exact downstream semantic availability boundary", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const availability = page.getByRole("region", {
+      name: "Downstream availability",
+    });
+    await expect(availability.getByText("Demand analysis", { exact: true })).toBeVisible();
+    await expect(availability.locator("dd")).toHaveText([
+      "✓ Available",
+      "— Not semantically available",
+      "— Not semantically available",
+      "— Not semantically available",
+    ]);
+    await expect(availability).toContainText("ENTROPY_SEMANTICS_UNCLOSED");
+    await expect(availability).toContainText("No score has been substituted.");
+  });
+
+  test("C6-06 renders all 80 verified moves in exact server order", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6LongSolutionFixture());
+    await runFixtureEvaluation(page);
+
+    const rendered = await page.locator("[data-move-token]").evaluateAll((moves) =>
+      moves.map((move) => ({
+        index: Number(move.getAttribute("data-move-index")),
+        token: move.getAttribute("data-move-token"),
+      }))
+    );
+    expect(rendered).toEqual(
+      C6_LONG_SOLUTION_MOVES.map((token, index) => ({ index, token }))
+    );
+  });
+
+  test("C6-07 separates cube, verified-solution, Human-State, and Demand trace planes", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6NonSolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const trace = page.getByRole("region", { name: "Trace and provenance" });
+    await expect(trace).toContainText(
+      "Cube-state transitions and verified solution moves do not prove human execution."
+    );
+    await expect(trace.getByText("Trace Level 1 · Summary", { exact: true })).toBeVisible();
+    await trace.getByRole("button", { name: "Show Trace Level 2 identifiers" }).click();
+    await expect(trace.getByText("Cube-state boundary", { exact: true }).first()).toBeVisible();
+    await expect(
+      trace.getByText("Verified solution transition", { exact: true }).first()
+    ).toBeVisible();
+    await expect(
+      trace.getByText("Human-State observation boundary", { exact: true }).first()
+    ).toBeVisible();
+    await expect(
+      trace.getByText("Domain Demand provenance", { exact: true }).first()
+    ).toBeVisible();
+    await expect(trace.getByText("Human-State Transition", { exact: true })).toHaveCount(0);
+  });
+
+  test("C6-08 paginates a 501-source trace in bounded 50-row pages", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6LargeTraceFixture());
+    await runFixtureEvaluation(page);
+
+    const trace = page.getByRole("region", { name: "Trace and provenance" });
+    await trace.getByRole("button", { name: "Show Trace Level 2 identifiers" }).click();
+    await expect(trace.getByText("509 records", { exact: true })).toBeVisible();
+    await expect(trace.getByTestId("trace-row")).toHaveCount(50);
+    await expect(trace.getByText("Page 1 of 11", { exact: true })).toBeVisible();
+    await trace.getByRole("button", { name: "Next trace page" }).click();
+    await expect(trace.getByText("Page 2 of 11", { exact: true })).toBeVisible();
+    await expect(trace.getByTestId("trace-row")).toHaveCount(50);
+  });
+
+  test("C6-09 exposes one selected structured Level 3 record at a time", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+
+    const trace = page.getByRole("region", { name: "Trace and provenance" });
+    await trace.getByRole("button", { name: "Show Trace Level 2 identifiers" }).click();
+    const details = trace.getByRole("button", {
+      name: /^View technical details for/,
+    });
+    await details.first().click();
+    await expect(trace.getByTestId("trace-level-3")).toHaveCount(1);
+    await expect(trace.getByTestId("trace-level-3")).toContainText("Request ID");
+    await expect(trace.getByTestId("trace-level-3")).toContainText("Build commit");
+    await details.nth(1).click();
+    await expect(trace.getByTestId("trace-level-3")).toHaveCount(1);
+  });
+
+  test("C6-10 preserves semantic reading order and reflows at 360px", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+      )
+    ).toBe(true);
+
+    const headings = await page
+      .getByTestId("demand-channel-sequence")
+      .locator("h4")
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x, y: box.y };
+        })
+      );
+    expect(headings.map(({ y }) => y)).toEqual(
+      [...headings.map(({ y }) => y)].sort((left, right) => left - right)
+    );
+    expect(Math.max(...headings.map(({ x }) => x)) - Math.min(...headings.map(({ x }) => x))).toBeLessThan(8);
+
+    const sectionOrder = await Promise.all(
+      ["Verified solution", "Domain Demand", "Downstream availability", "Trace and provenance"].map(
+        async (name) =>
+          (await page.getByRole("region", { name }).boundingBox())?.y ?? -1
+      )
+    );
+    expect(sectionOrder).toEqual(
+      [...sectionOrder].sort((left, right) => left - right)
+    );
+  });
+
+  test("C6-11 supports keyboard disclosure, selection, and trace pagination", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6LargeTraceFixture());
+    await runFixtureEvaluation(page);
+
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Show solution technical details" })
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Show T1 provenance" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Show T2 provenance" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    const traceToggle = page.locator('button[aria-controls="trace-level-2"]');
+    await expect(traceToggle).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(traceToggle).toHaveAttribute("aria-expanded", "true");
+
+    for (let index = 0; index < 51; index += 1) {
+      await page.keyboard.press("Tab");
+    }
+    const nextPage = page.getByRole("button", { name: "Next trace page" });
+    await expect(nextPage).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Page 2 of 11", { exact: true })).toBeVisible();
+  });
+
+  test("C6-12 invalidates the committed result after any draft edit", async ({ page }) => {
+    await routeEvaluationFixture(page, createC6SolvedFixture());
+    await runFixtureEvaluation(page);
+    await expect(page.getByTestId("result-shell")).toBeVisible();
+
+    await page.getByRole("radio", { name: /R Red/ }).check();
+    await page.locator('[data-sticker-index="0"]').click();
+    await expect(page.getByTestId("result-shell")).toHaveCount(0);
+  });
+
+  test("C6 real local API renders a solved evaluation response", async ({ page }) => {
+    test.setTimeout(60_000);
+
+    await runFixtureEvaluation(page);
+
+    await expect(page.getByText("No moves required", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("status-only-channel")).toHaveCount(4);
+    await expect(page.locator('[data-status="NOT_OBSERVED"]')).toHaveCount(7);
+  });
+
   test("PUI-17 keeps scanner, camera, solver, and evaluator runtimes out of root resources", async ({ page }) => {
     const resources = await page.evaluate(() =>
       performance.getEntriesByType("resource").map((entry) => {
@@ -475,16 +752,20 @@ test.describe("C4 manual evaluator workbench", () => {
         resource.initiatorType === "script" &&
         resource.name.includes("/_next/static/chunks/")
     );
+    const encodedRootJs = scripts.reduce(
+      (total, resource) => total + resource.encodedBodySize,
+      0
+    );
+    const decodedRootJs = scripts.reduce(
+      (total, resource) => total + resource.decodedBodySize,
+      0
+    );
 
     expect(names).not.toMatch(
       /onnxruntime|cube_pose\.onnx|\.wasm(?:\?|$)|\/detect(?:\?|$)/i
     );
     await expect(page.locator('a[href="/detect"]')).toHaveCount(0);
-    expect(
-      scripts.reduce((total, resource) => total + resource.encodedBodySize, 0)
-    ).toBeLessThanOrEqual(250 * 1024);
-    expect(
-      scripts.reduce((total, resource) => total + resource.decodedBodySize, 0)
-    ).toBeLessThanOrEqual(800 * 1024);
+    expect(encodedRootJs).toBeLessThanOrEqual(250 * 1024);
+    expect(decodedRootJs).toBeLessThanOrEqual(800 * 1024);
   });
 });

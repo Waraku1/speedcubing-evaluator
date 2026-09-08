@@ -1,32 +1,35 @@
 import {
+  UI_DEMAND_VALIDITY_STATUSES_V1,
   UI_EVALUATE_ERROR_CODES_V1,
+  UI_MOVE_TOKENS_V1,
+  type UiChannelStatusOnlyRecordV1,
+  type UiContinuityPropositionV1,
+  type UiDemandChannelV1,
+  type UiDemandProvenanceV1,
   type UiDomainDemandV1,
   type UiDownstreamAvailabilityV1,
   type UiEvaluateErrorCodeV1,
   type UiEvaluateResultV1,
   type UiErrorFocusV1,
+  type UiFingerPropositionV1,
+  type UiGovernedStatusV1,
+  type UiGripPropositionV1,
+  type UiHumanStateNotObservedWarningV1,
+  type UiOrientationPropositionV1,
   type UiPublicErrorV1,
   type UiSolutionV1,
+  type UiSourceVersionRecordV1,
+  type UiTemporalEvidencePlaneV1,
   type UiTransitionTraceV1,
 } from "./evaluateUiTypesV1";
 
 const MAX_ARRAY_ITEMS = 512;
 const MAX_IDENTIFIER_LENGTH = 512;
 
-const MOVE_TOKENS = new Set([
-  "U", "U'", "U2", "R", "R'", "R2", "F", "F'", "F2",
-  "D", "D'", "D2", "L", "L'", "L2", "B", "B'", "B2",
-]);
-const DOMAIN_VALIDITY_STATUSES = new Set([
-  "VALID",
-  "MISSING",
-  "INVALID",
-  "CENSORED",
-  "SATURATED",
-  "NOT_OBSERVED",
-  "PATH_UNKNOWN",
-  "QUALITY_UNKNOWN",
-]);
+const MOVE_TOKENS = new Set<string>(UI_MOVE_TOKENS_V1);
+const DOMAIN_VALIDITY_STATUSES = new Set<string>(
+  UI_DEMAND_VALIDITY_STATUSES_V1
+);
 
 const ERROR_CODES = new Set<string>(UI_EVALUATE_ERROR_CODES_V1);
 const SERVER_ERROR_CONTRACT: Readonly<
@@ -229,7 +232,9 @@ function isNullableIdentifier(value: unknown): boolean {
   return value === null || isIdentifier(value);
 }
 
-function isDemandProvenance(value: unknown): boolean {
+function isDemandProvenance(
+  value: unknown
+): value is UiDemandProvenanceV1 {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -256,14 +261,9 @@ function isDemandProvenance(value: unknown): boolean {
   );
 }
 
-function isGovernedStatus(value: unknown): boolean {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["status", "reason", "provenance"])
-  ) {
-    return false;
-  }
-
+function hasGovernedStatusFields(
+  value: Record<string, unknown>
+): boolean {
   return (
     typeof value.status === "string" &&
     DOMAIN_VALIDITY_STATUSES.has(value.status) &&
@@ -272,7 +272,21 @@ function isGovernedStatus(value: unknown): boolean {
   );
 }
 
-function isTemporalPlane(value: unknown, plane: "T1" | "T2"): boolean {
+function isGovernedStatus(value: unknown): value is UiGovernedStatusV1 {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["status", "reason", "provenance"])
+  ) {
+    return false;
+  }
+
+  return hasGovernedStatusFields(value);
+}
+
+function isTemporalPlane(
+  value: unknown,
+  plane: "T1" | "T2"
+): value is UiTemporalEvidencePlaneV1 {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -289,19 +303,230 @@ function isTemporalPlane(value: unknown, plane: "T1" | "T2"): boolean {
   return (
     isIdentifier(value.planeId) &&
     value.plane === plane &&
-    isGovernedStatus({
-      status: value.status,
-      reason: value.reason,
-      provenance: value.provenance,
-    })
+    hasGovernedStatusFields(value)
   );
 }
 
-function isDemandChannel(
+function isStringArray(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_ARRAY_ITEMS &&
+    value.every(isIdentifier)
+  );
+}
+
+function hasDemandPropositionBase(
+  value: Record<string, unknown>
+): boolean {
+  return (
+    isIdentifier(value.propositionId) &&
+    isIdentifier(value.transitionId) &&
+    isIdentifier(value.eventId) &&
+    isIdentifier(value.observationId) &&
+    isIdentifier(value.windowId) &&
+    hasGovernedStatusFields(value)
+  );
+}
+
+const NUMERIC_DIRECTIONS = new Set([
+  "INCREASE",
+  "DECREASE",
+  "UNCHANGED",
+  "UNKNOWN",
+]);
+const AVAILABILITY_DIRECTIONS = new Set([
+  "GAINED",
+  "LOST",
+  "UNCHANGED",
+  "UNKNOWN",
+]);
+const FINGER_RESOURCE_DIRECTIONS = new Set([
+  "DEPLETION",
+  "RECOVERY",
+  "UNCHANGED",
+  "UNKNOWN",
+]);
+const FINGER_IDS = new Set([
+  "L_THUMB",
+  "L_INDEX",
+  "L_MIDDLE",
+  "R_THUMB",
+  "R_INDEX",
+  "R_MIDDLE",
+]);
+const CONTINUITY_DIRECTIONS = new Set([
+  "LOSS",
+  "GAIN_OR_RECOVERY",
+  "UNCHANGED",
+  "UNKNOWN",
+]);
+
+function isGripProposition(
+  value: unknown
+): value is UiGripPropositionV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "propositionId",
+      "transitionId",
+      "eventId",
+      "observationId",
+      "windowId",
+      "status",
+      "reason",
+      "provenance",
+      "semanticOwner",
+      "side",
+      "contactCountDirection",
+      "stabilizationDirection",
+      "sourceFields",
+      "contactIdentity",
+      "attribution",
+      "path",
+    ]) &&
+    hasDemandPropositionBase(value) &&
+    value.semanticOwner === "G-H-GR1" &&
+    (value.side === "LEFT" || value.side === "RIGHT") &&
+    typeof value.contactCountDirection === "string" &&
+    NUMERIC_DIRECTIONS.has(value.contactCountDirection) &&
+    typeof value.stabilizationDirection === "string" &&
+    AVAILABILITY_DIRECTIONS.has(value.stabilizationDirection) &&
+    isStringArray(value.sourceFields) &&
+    isGovernedStatus(value.contactIdentity) &&
+    isGovernedStatus(value.attribution) &&
+    isGovernedStatus(value.path)
+  );
+}
+
+function isFingerProposition(
+  value: unknown
+): value is UiFingerPropositionV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "propositionId",
+      "transitionId",
+      "eventId",
+      "observationId",
+      "windowId",
+      "status",
+      "reason",
+      "provenance",
+      "semanticOwner",
+      "fingerId",
+      "fatigueSourceDirection",
+      "availabilityDirection",
+      "sourceFields",
+      "resourceSemantics",
+      "path",
+    ]) &&
+    hasDemandPropositionBase(value) &&
+    value.semanticOwner === "F-H-FR1" &&
+    typeof value.fingerId === "string" &&
+    FINGER_IDS.has(value.fingerId) &&
+    typeof value.fatigueSourceDirection === "string" &&
+    FINGER_RESOURCE_DIRECTIONS.has(value.fatigueSourceDirection) &&
+    typeof value.availabilityDirection === "string" &&
+    AVAILABILITY_DIRECTIONS.has(value.availabilityDirection) &&
+    isStringArray(value.sourceFields) &&
+    isGovernedStatus(value.resourceSemantics) &&
+    isGovernedStatus(value.path)
+  );
+}
+
+function isOrientationProposition(
+  value: unknown
+): value is UiOrientationPropositionV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "propositionId",
+      "transitionId",
+      "eventId",
+      "observationId",
+      "windowId",
+      "status",
+      "reason",
+      "provenance",
+      "semanticOwner",
+      "xDirection",
+      "yDirection",
+      "zDirection",
+      "sourceFields",
+      "frame",
+      "transform",
+      "equivalence",
+      "path",
+    ]) &&
+    hasDemandPropositionBase(value) &&
+    value.semanticOwner === "O-H-OR1" &&
+    [value.xDirection, value.yDirection, value.zDirection].every(
+      (direction) =>
+        typeof direction === "string" && NUMERIC_DIRECTIONS.has(direction)
+    ) &&
+    isStringArray(value.sourceFields) &&
+    isGovernedStatus(value.frame) &&
+    isGovernedStatus(value.transform) &&
+    isGovernedStatus(value.equivalence) &&
+    isGovernedStatus(value.path)
+  );
+}
+
+function isContinuityProposition(
+  value: unknown
+): value is UiContinuityPropositionV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "propositionId",
+      "transitionId",
+      "eventId",
+      "observationId",
+      "windowId",
+      "status",
+      "reason",
+      "provenance",
+      "semanticOwner",
+      "continuityDirection",
+      "sourceFields",
+      "recoveryClassification",
+      "path",
+    ]) &&
+    hasDemandPropositionBase(value) &&
+    value.semanticOwner === "C-H-CR1" &&
+    typeof value.continuityDirection === "string" &&
+    CONTINUITY_DIRECTIONS.has(value.continuityDirection) &&
+    isStringArray(value.sourceFields) &&
+    isGovernedStatus(value.recoveryClassification) &&
+    isGovernedStatus(value.path)
+  );
+}
+
+function isChannelStatusOnlyRecord(
+  value: unknown,
+  scope: "grip" | "finger" | "orientation" | "continuity"
+): value is UiChannelStatusOnlyRecordV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "statusRecordId",
+      "scope",
+      "status",
+      "reason",
+      "provenance",
+    ]) &&
+    isIdentifier(value.statusRecordId) &&
+    value.scope === scope &&
+    hasGovernedStatusFields(value)
+  );
+}
+
+function isDemandChannel<T>(
   value: unknown,
   owner: string,
-  scope: "grip" | "finger" | "orientation" | "continuity"
-): boolean {
+  scope: "grip" | "finger" | "orientation" | "continuity",
+  isProposition: (candidate: unknown) => candidate is T
+): value is UiDemandChannelV1<T> {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -310,32 +535,67 @@ function isDemandChannel(
       "statusOnlyRecord",
     ]) ||
     value.semanticOwner !== owner ||
-    !isBoundedRecordArray(value.propositionRecords)
+    !Array.isArray(value.propositionRecords) ||
+    value.propositionRecords.length > MAX_ARRAY_ITEMS ||
+    !value.propositionRecords.every(isProposition)
   ) {
     return false;
   }
 
   if (value.statusOnlyRecord === null) {
-    return true;
+    return value.propositionRecords.length > 0;
   }
 
-  const statusRecord = value.statusOnlyRecord;
   return (
-    isRecord(statusRecord) &&
-    hasExactKeys(statusRecord, [
-      "statusRecordId",
-      "scope",
-      "status",
-      "reason",
-      "provenance",
+    value.propositionRecords.length === 0 &&
+    isChannelStatusOnlyRecord(value.statusOnlyRecord, scope)
+  );
+}
+
+function isSourceVersionRecord(
+  value: unknown
+): value is UiSourceVersionRecordV1 {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "sourceVersionId",
+      "sourceName",
+      "sourceVersion",
+      "role",
     ]) &&
-    isIdentifier(statusRecord.statusRecordId) &&
-    statusRecord.scope === scope &&
-    isGovernedStatus({
-      status: statusRecord.status,
-      reason: statusRecord.reason,
-      provenance: statusRecord.provenance,
-    })
+    isIdentifier(value.sourceVersionId) &&
+    isIdentifier(value.sourceName) &&
+    isIdentifier(value.sourceVersion) &&
+    [
+      "HUMAN_STATE_SOURCE",
+      "TRANSITION_SOURCE",
+      "SUPPLEMENTAL_EVIDENCE",
+      "DOMAIN_DERIVATION",
+    ].includes(String(value.role))
+  );
+}
+
+function propositionReferencesAreLinked(
+  proposition:
+    | UiGripPropositionV1
+    | UiFingerPropositionV1
+    | UiOrientationPropositionV1
+    | UiContinuityPropositionV1
+): boolean {
+  return (
+    proposition.provenance.transitionId === proposition.transitionId &&
+    proposition.provenance.eventId === proposition.eventId &&
+    proposition.provenance.observationId === proposition.observationId &&
+    proposition.provenance.windowId === proposition.windowId
+  );
+}
+
+function governedSourcesAreKnown(
+  statuses: readonly UiGovernedStatusV1[],
+  sourceVersionIds: ReadonlySet<string>
+): boolean {
+  return statuses.every((status) =>
+    sourceVersionIds.has(status.provenance.sourceVersionId)
   );
 }
 
@@ -374,7 +634,10 @@ function isDomainDemand(value: unknown): value is UiDomainDemandV1 {
     !isBoundedRecordArray(value.executionEpisode.observationRecords) ||
     !isBoundedRecordArray(value.executionEpisode.windowRecords) ||
     !isBoundedRecordArray(value.executionEpisode.evidenceEdges) ||
-    !isBoundedRecordArray(value.executionEpisode.sourceVersionManifest) ||
+    !Array.isArray(value.executionEpisode.sourceVersionManifest) ||
+    value.executionEpisode.sourceVersionManifest.length === 0 ||
+    value.executionEpisode.sourceVersionManifest.length > MAX_ARRAY_ITEMS ||
+    !value.executionEpisode.sourceVersionManifest.every(isSourceVersionRecord) ||
     !isRecord(value.executionEpisode.t3Consequences) ||
     !hasExactKeys(value.executionEpisode.t3Consequences, [
       "grip",
@@ -387,18 +650,101 @@ function isDomainDemand(value: unknown): value is UiDomainDemandV1 {
   }
 
   const consequences = value.executionEpisode.t3Consequences;
-  return (
-    isDemandChannel(consequences.grip, "G-H-GR1", "grip") &&
-    isDemandChannel(consequences.finger, "F-H-FR1", "finger") &&
-    isDemandChannel(
+  if (
+    !isDemandChannel(
+      consequences.grip,
+      "G-H-GR1",
+      "grip",
+      isGripProposition
+    ) ||
+    !isDemandChannel(
+      consequences.finger,
+      "F-H-FR1",
+      "finger",
+      isFingerProposition
+    ) ||
+    !isDemandChannel(
       consequences.orientation,
       "O-H-OR1",
-      "orientation"
-    ) &&
-    isDemandChannel(consequences.continuity, "C-H-CR1", "continuity") &&
-    isTemporalPlane(value.t1Plane, "T1") &&
-    isTemporalPlane(value.t2Plane, "T2")
+      "orientation",
+      isOrientationProposition
+    ) ||
+    !isDemandChannel(
+      consequences.continuity,
+      "C-H-CR1",
+      "continuity",
+      isContinuityProposition
+    ) ||
+    !isTemporalPlane(value.t1Plane, "T1") ||
+    !isTemporalPlane(value.t2Plane, "T2")
+  ) {
+    return false;
+  }
+
+  const sourceVersionIds = new Set(
+    value.executionEpisode.sourceVersionManifest.map(
+      (source) => source.sourceVersionId
+    )
   );
+  if (
+    sourceVersionIds.size !==
+    value.executionEpisode.sourceVersionManifest.length
+  ) {
+    return false;
+  }
+
+  const propositions = [
+    ...consequences.grip.propositionRecords,
+    ...consequences.finger.propositionRecords,
+    ...consequences.orientation.propositionRecords,
+    ...consequences.continuity.propositionRecords,
+  ];
+  const governedStatuses: UiGovernedStatusV1[] = [
+    value.t1Plane,
+    value.t2Plane,
+  ];
+
+  for (const statusRecord of [
+    consequences.grip.statusOnlyRecord,
+    consequences.finger.statusOnlyRecord,
+    consequences.orientation.statusOnlyRecord,
+    consequences.continuity.statusOnlyRecord,
+  ]) {
+    if (statusRecord !== null) {
+      governedStatuses.push(statusRecord);
+    }
+  }
+
+  for (const proposition of propositions) {
+    if (!propositionReferencesAreLinked(proposition)) {
+      return false;
+    }
+    governedStatuses.push(proposition);
+
+    if (proposition.semanticOwner === "G-H-GR1") {
+      governedStatuses.push(
+        proposition.contactIdentity,
+        proposition.attribution,
+        proposition.path
+      );
+    } else if (proposition.semanticOwner === "F-H-FR1") {
+      governedStatuses.push(proposition.resourceSemantics, proposition.path);
+    } else if (proposition.semanticOwner === "O-H-OR1") {
+      governedStatuses.push(
+        proposition.frame,
+        proposition.transform,
+        proposition.equivalence,
+        proposition.path
+      );
+    } else {
+      governedStatuses.push(
+        proposition.recoveryClassification,
+        proposition.path
+      );
+    }
+  }
+
+  return governedSourcesAreKnown(governedStatuses, sourceVersionIds);
 }
 
 function isCubeBoundary(value: unknown): value is Record<string, unknown> {
@@ -573,7 +919,9 @@ function isAvailability(
   );
 }
 
-function isWarning(value: unknown): value is Record<string, unknown> {
+function isWarning(
+  value: unknown
+): value is UiHumanStateNotObservedWarningV1 {
   return (
     isRecord(value) &&
     hasExactKeys(value, ["code", "executionId", "transitionIds"]) &&
@@ -702,7 +1050,21 @@ function parseSuccess(payload: Record<string, unknown>): UiEvaluateResultV1 {
       format: "URFDLB_FACELETS_V1" as const,
     },
     solution,
-    demand,
+    demand: {
+      artifactId: demand.artifactId,
+      schemaId: "SPEC-DM-001" as const,
+      schemaVersion: "1.0" as const,
+      architecture: "P-C" as const,
+      claimClass: "T3_BOUNDED_DOMAIN_DEMAND" as const,
+      executionEpisode: {
+        executionId: demand.executionEpisode.executionId,
+        t3Consequences: demand.executionEpisode.t3Consequences,
+        sourceVersionManifest:
+          demand.executionEpisode.sourceVersionManifest,
+      },
+      t1Plane: demand.t1Plane,
+      t2Plane: demand.t2Plane,
+    },
     availability,
     trace,
     warnings: result.warnings,

@@ -5,6 +5,11 @@ import {
   parseEvaluateResponseV1,
   serializeEvaluateRequestV1,
 } from "../../src/lib/ui/evaluateCube";
+import {
+  buildTraceRowsV1,
+  TRACE_PAGE_SIZE_V1,
+} from "../../src/components/results/TraceExplorer";
+import { VALIDITY_PRESENTATION_V1 } from "../../src/components/status/ValidityBadge";
 import type {
   UiEvaluateErrorCodeV1,
   UiPublicErrorV1,
@@ -13,6 +18,14 @@ import {
   createInitialWorkbenchStateV1,
   workbenchReducerV1,
 } from "../../src/lib/ui/workbenchStateV1";
+import {
+  C6_LONG_SOLUTION_MOVES,
+  createC6LargeTraceFixture,
+  createC6LongSolutionFixture,
+  createC6NonSolvedFixture,
+  createC6SolvedFixture,
+  createC6ValidityVocabularyFixture,
+} from "../fixtures/c6PresentationFixtures";
 
 const COMMIT = "a".repeat(40);
 const REQUEST_ID = "request:c4-test";
@@ -125,7 +138,14 @@ function successFixture(): Record<string, unknown> {
               statusOnlyRecord: statusOnly("continuity"),
             },
           },
-          sourceVersionManifest: [],
+          sourceVersionManifest: [
+            {
+              sourceVersionId: "source:c4-test",
+              sourceName: "C4 test Human-State source",
+              sourceVersion: "1.0",
+              role: "HUMAN_STATE_SOURCE",
+            },
+          ],
         },
         t1Plane: {
           planeId: "plane:t1",
@@ -227,6 +247,27 @@ function statusRecordFor(
   const episode = recordAt(demand, "executionEpisode");
   const consequences = recordAt(episode, "t3Consequences");
   return recordAt(recordAt(consequences, channel), "statusOnlyRecord");
+}
+
+function channelFor(
+  payload: Record<string, unknown>,
+  channel: "grip" | "finger" | "orientation" | "continuity"
+): Record<string, unknown> {
+  const result = recordAt(payload, "result");
+  const demand = recordAt(result, "domainDemand");
+  const episode = recordAt(demand, "executionEpisode");
+  return recordAt(recordAt(episode, "t3Consequences"), channel);
+}
+
+function propositionFor(
+  payload: Record<string, unknown>,
+  channel: "grip" | "finger" | "orientation" | "continuity"
+): Record<string, unknown> {
+  const propositions = channelFor(payload, channel).propositionRecords;
+  if (!Array.isArray(propositions) || propositions.length === 0) {
+    throw new Error(`Expected proposition for ${channel}`);
+  }
+  return propositions[0] as Record<string, unknown>;
 }
 
 describe("C4 evaluate adapter", () => {
@@ -495,5 +536,204 @@ describe("C4R quality reconciliation", () => {
         continuity: { statusOnlyRecord: { scope: "continuity" } },
       },
     });
+  });
+});
+
+describe("C6 typed result projection", () => {
+  it("C6-U01 projects solved and non-solved fixtures without raw episode records", () => {
+    const solved = parseEvaluateResponseV1(createC6SolvedFixture(), true);
+    const nonSolved = parseEvaluateResponseV1(
+      createC6NonSolvedFixture(),
+      true
+    );
+
+    expect(solved.solution).toMatchObject({ moves: [], htm: 0, qtm: 0 });
+    expect(nonSolved.solution.moves).toEqual(["R", "U", "R'", "U'"]);
+    expect(nonSolved.solution.verified).toBe(true);
+    expect(nonSolved.demand.executionEpisode).toHaveProperty(
+      "t3Consequences"
+    );
+    expect(nonSolved.demand.executionEpisode).toHaveProperty(
+      "sourceVersionManifest"
+    );
+    expect(nonSolved.demand.executionEpisode).not.toHaveProperty(
+      "observationRecords"
+    );
+    expect(nonSolved.demand.executionEpisode).not.toHaveProperty(
+      "evidenceEdges"
+    );
+  });
+
+  it("C6-U02 binds every governed validity status to exact visible copy", () => {
+    expect(VALIDITY_PRESENTATION_V1).toEqual({
+      VALID: { label: "Observed", cue: "●" },
+      MISSING: { label: "Missing evidence", cue: "—" },
+      INVALID: { label: "Invalid evidence", cue: "!" },
+      CENSORED: { label: "Censored", cue: "×" },
+      SATURATED: { label: "Saturated", cue: "▲" },
+      NOT_OBSERVED: { label: "Not observed", cue: "○" },
+      PATH_UNKNOWN: { label: "Path unknown", cue: "?" },
+      QUALITY_UNKNOWN: { label: "Quality unknown", cue: "◇" },
+    });
+
+    const parsed = parseEvaluateResponseV1(
+      createC6ValidityVocabularyFixture(),
+      true
+    );
+    const statuses = new Set(
+      buildTraceRowsV1(parsed)
+        .flatMap((row) => row.fields)
+        .filter((field) => field.label.toLowerCase().includes("validity"))
+        .map((field) => field.value)
+    );
+    expect(statuses).toEqual(
+      new Set([
+        "VALID",
+        "MISSING",
+        "INVALID",
+        "CENSORED",
+        "SATURATED",
+        "NOT_OBSERVED",
+        "PATH_UNKNOWN",
+        "QUALITY_UNKNOWN",
+      ])
+    );
+  });
+
+  it("C6-U03 preserves all 80 ordered MoveV1 tokens", () => {
+    const parsed = parseEvaluateResponseV1(
+      createC6LongSolutionFixture(),
+      true
+    );
+
+    expect(parsed.solution.moves).toHaveLength(80);
+    expect(parsed.solution.moves).toEqual(C6_LONG_SOLUTION_MOVES);
+  });
+
+  it("C6-U04 preserves a 501-record source model while paging at 50", () => {
+    const parsed = parseEvaluateResponseV1(createC6LargeTraceFixture(), true);
+    const rows = buildTraceRowsV1(parsed);
+
+    expect(parsed.demand.executionEpisode.sourceVersionManifest).toHaveLength(
+      501
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(501);
+    expect(TRACE_PAGE_SIZE_V1).toBe(50);
+    expect(rows.slice(0, TRACE_PAGE_SIZE_V1)).toHaveLength(50);
+  });
+
+  it("C6-U05 rejects a Grip proposition with the wrong semantic owner", () => {
+    const fixture = createC6ValidityVocabularyFixture();
+    propositionFor(fixture, "grip").semanticOwner = "F-H-FR1";
+    expect(incompatibleCode(fixture)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U06 rejects invalid Grip side and direction values", () => {
+    const invalidSide = createC6ValidityVocabularyFixture();
+    propositionFor(invalidSide, "grip").side = "CENTER";
+
+    const invalidDirection = createC6ValidityVocabularyFixture();
+    propositionFor(invalidDirection, "grip").contactCountDirection = "GAINED";
+
+    expect(incompatibleCode(invalidSide)).toBe("INCOMPATIBLE_RESPONSE");
+    expect(incompatibleCode(invalidDirection)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U07 rejects an unknown Finger identity", () => {
+    const fixture = createC6ValidityVocabularyFixture();
+    propositionFor(fixture, "finger").fingerId = "L_RING";
+    expect(incompatibleCode(fixture)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U08 rejects unauthorized Orientation substitute fields", () => {
+    const fixture = createC6ValidityVocabularyFixture();
+    propositionFor(fixture, "orientation").certainty = 0.9;
+    expect(incompatibleCode(fixture)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U09 rejects an invalid Continuity direction", () => {
+    const fixture = createC6ValidityVocabularyFixture();
+    propositionFor(fixture, "continuity").continuityDirection = "FLOW";
+    expect(incompatibleCode(fixture)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U10 rejects malformed governed status and unknown validity", () => {
+    const malformed = createC6ValidityVocabularyFixture();
+    propositionFor(malformed, "grip").reason = 9;
+
+    const unknown = createC6ValidityVocabularyFixture();
+    propositionFor(unknown, "finger").status = "PARTIAL";
+
+    expect(incompatibleCode(malformed)).toBe("INCOMPATIBLE_RESPONSE");
+    expect(incompatibleCode(unknown)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U11 rejects malformed provenance and bad evidence-reference IDs", () => {
+    const malformed = createC6ValidityVocabularyFixture();
+    delete recordAt(propositionFor(malformed, "orientation"), "provenance")
+      .sourceVersionId;
+
+    const badReference = createC6ValidityVocabularyFixture();
+    propositionFor(badReference, "continuity").eventId = 42;
+
+    const unlinkedReference = createC6ValidityVocabularyFixture();
+    recordAt(
+      propositionFor(unlinkedReference, "grip"),
+      "provenance"
+    ).eventId = "event:c6:other";
+
+    expect(incompatibleCode(malformed)).toBe("INCOMPATIBLE_RESPONSE");
+    expect(incompatibleCode(badReference)).toBe("INCOMPATIBLE_RESPONSE");
+    expect(incompatibleCode(unlinkedReference)).toBe(
+      "INCOMPATIBLE_RESPONSE"
+    );
+  });
+
+  it("C6-U12 rejects unexpected proposition keys and unknown sources", () => {
+    const unexpected = createC6ValidityVocabularyFixture();
+    propositionFor(unexpected, "grip").extra = "not closed";
+
+    const unknownSource = createC6ValidityVocabularyFixture();
+    recordAt(
+      propositionFor(unknownSource, "finger"),
+      "provenance"
+    ).sourceVersionId = "source:c6:not-declared";
+
+    expect(incompatibleCode(unexpected)).toBe("INCOMPATIBLE_RESPONSE");
+    expect(incompatibleCode(unknownSource)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C6-U13 resets presentation-only trace state with a changed cube", () => {
+    let state = createInitialWorkbenchStateV1();
+    state = workbenchReducerV1(state, { type: "LOAD_SOLVED" });
+    state = workbenchReducerV1(state, { type: "BEGIN_SUBMIT", epoch: 2 });
+    state = workbenchReducerV1(state, {
+      type: "RECEIVE_SUCCESS",
+      epoch: 2,
+      result: parseEvaluateResponseV1(createC6SolvedFixture(), true),
+    });
+    state = workbenchReducerV1(state, {
+      type: "SET_RESULT_DETAILS",
+      expanded: true,
+    });
+    state = workbenchReducerV1(state, { type: "SET_TRACE_PAGE", page: 3 });
+    state = workbenchReducerV1(state, {
+      type: "SELECT_TRACE_RECORD",
+      recordId: "source:source:c6:150",
+    });
+
+    expect(state.resultDetailsExpanded).toBe(true);
+    expect(state.tracePage).toBe(3);
+    expect(state.selectedTraceRecordId).not.toBeNull();
+
+    state = workbenchReducerV1(state, {
+      type: "EDIT_STICKER",
+      index: 0,
+      token: "R",
+    });
+    expect(state.result).toBeNull();
+    expect(state.resultDetailsExpanded).toBe(false);
+    expect(state.tracePage).toBe(0);
+    expect(state.selectedTraceRecordId).toBeNull();
   });
 });

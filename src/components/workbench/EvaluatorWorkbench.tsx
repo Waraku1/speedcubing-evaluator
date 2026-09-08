@@ -15,6 +15,7 @@ import {
   createInitialWorkbenchStateV1,
   workbenchReducerV1,
 } from "../../lib/ui/workbenchStateV1";
+import { EvaluationResultPanel } from "../results/EvaluationResultPanel";
 import { CubeInputPanel } from "./CubeInputPanel";
 import styles from "./workbench.module.css";
 
@@ -153,7 +154,7 @@ export function EvaluatorWorkbench() {
       case "SUBMITTING":
         return "Solving and generating Demand";
       case "SUCCESS":
-        return "Analysis received";
+        return "Evaluation result ready";
       case "ERROR":
         return state.error?.explanation ?? "The evaluation request failed.";
       case "CANCELLED":
@@ -305,30 +306,22 @@ export function EvaluatorWorkbench() {
       </section>
 
       {state.phase === "SUCCESS" && state.result !== null ? (
-        <section
-          aria-labelledby="result-heading"
-          className={styles.resultPanel}
-          data-testid="result-shell"
-        >
-          <p className={styles.stepLabel}>Server response</p>
-          <h2 id="result-heading" ref={resultRef} tabIndex={-1}>
-            Analysis received
-          </h2>
-          <p>
-            Detailed verified solution and Domain Demand results will be
-            rendered by the results module.
-          </p>
-          <dl className={styles.resultMetadata}>
-            <div>
-              <dt>Request</dt>
-              <dd className="mono">{state.result.requestId}</dd>
-            </div>
-            <div>
-              <dt>Build</dt>
-              <dd className="mono">{state.result.build.commit}</dd>
-            </div>
-          </dl>
-        </section>
+        <EvaluationResultPanel
+          onSelectTraceRecord={(recordId) =>
+            dispatch({ type: "SELECT_TRACE_RECORD", recordId })
+          }
+          onTraceExpandedChange={(expanded) =>
+            dispatch({ type: "SET_RESULT_DETAILS", expanded })
+          }
+          onTracePageChange={(page) =>
+            dispatch({ type: "SET_TRACE_PAGE", page })
+          }
+          ref={resultRef}
+          result={state.result}
+          selectedTraceRecordId={state.selectedTraceRecordId}
+          traceExpanded={state.resultDetailsExpanded}
+          tracePage={state.tracePage}
+        />
       ) : null}
     </div>
   );

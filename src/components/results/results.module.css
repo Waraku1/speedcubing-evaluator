@@ -1,0 +1,461 @@
+.resultPanel {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--ui-border);
+  border-top: 4px solid var(--ui-accent);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
+  box-shadow: 0 1px 2px rgb(23 33 43 / 6%);
+}
+
+.resultPanel h2,
+.resultPanel h3,
+.resultPanel h4,
+.resultPanel p {
+  overflow-wrap: anywhere;
+}
+
+.resultPanel h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.resultPanel h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.resultPanel h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.eyebrow,
+.sectionLabel {
+  margin: 0 0 4px;
+  color: var(--ui-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.resultIntro,
+.supportingCopy {
+  max-width: 72ch;
+  color: var(--ui-muted);
+}
+
+.resultIntro {
+  margin: 8px 0 20px;
+}
+
+.supportingCopy {
+  margin: 8px 0 16px;
+}
+
+.requestMetadata,
+.technicalList,
+.compactMetrics,
+.summaryGrid,
+.availabilityList,
+.defaultFields {
+  margin: 0;
+}
+
+.requestMetadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.requestMetadata > div,
+.compactMetrics > div,
+.summaryGrid > div,
+.availabilityList > div,
+.defaultFields > div,
+.technicalList > div {
+  min-width: 0;
+}
+
+.requestMetadata > div {
+  padding: 10px;
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.requestMetadata dt,
+.technicalList dt,
+.compactMetrics dt,
+.summaryGrid dt,
+.availabilityList dt,
+.defaultFields dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.requestMetadata dd,
+.technicalList dd,
+.compactMetrics dd,
+.summaryGrid dd,
+.availabilityList dd,
+.defaultFields dd {
+  margin: 3px 0 0;
+}
+
+.section {
+  min-width: 0;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-card);
+  background: var(--ui-surface);
+}
+
+.headingRow,
+.channelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.verifiedBadge {
+  display: inline-flex;
+  flex: none;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid #83a992;
+  border-radius: 999px;
+  background: #f0f8f3;
+  color: #285c39;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.emptySequence {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+  font-weight: 700;
+}
+
+.moveList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.moveToken {
+  min-width: 42px;
+  padding: 7px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+}
+
+.compactMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 120px));
+  gap: 10px;
+}
+
+.compactMetrics > div {
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.compactMetrics dd {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.disclosure {
+  margin-top: 14px;
+}
+
+.disclosureButton,
+.inlineButton {
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.disclosureButton:hover:not(:disabled),
+.inlineButton:hover:not(:disabled) {
+  background: var(--ui-subtle);
+}
+
+.disclosureButton:disabled,
+.inlineButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.disclosureContent,
+.traceLevel {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.technicalList {
+  display: grid;
+  gap: 10px;
+}
+
+.technicalList + .technicalList {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.governedDetail dd {
+  display: grid;
+  gap: 6px;
+}
+
+.infoNote {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid #a8c4d5;
+  border-radius: var(--radius-control);
+  background: #edf6fa;
+  color: var(--ui-info);
+}
+
+.infoNote p {
+  margin: 4px 0 0;
+}
+
+.channelSequence {
+  display: grid;
+  gap: 12px;
+}
+
+.channel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-left: 4px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.designation,
+.traceCategory {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statusOnly {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.statusOnly p,
+.proposition p,
+.temporalPlane p,
+.reasonLine {
+  margin: 0;
+}
+
+.propositionList,
+.traceRows,
+.channelCounts {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.propositionList,
+.traceRows {
+  display: grid;
+  gap: 10px;
+}
+
+.proposition {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.proposition > p {
+  margin-top: 8px;
+}
+
+.defaultFields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.defaultFields > div {
+  padding: 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.temporalSection {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.temporalList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.temporalPlane {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.temporalPlane > p {
+  margin-top: 8px;
+}
+
+.availabilityList {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.availabilityList > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.reasonLine {
+  margin-top: 12px;
+}
+
+.traceSummary {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.summaryGrid > div {
+  padding: 9px;
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.channelCounts {
+  display: grid;
+  gap: 8px;
+}
+
+.channelCounts li {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.traceRows li {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.traceRows .inlineButton {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 4px;
+  white-space: normal;
+  text-align: left;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (max-width: 767px) {
+  .requestMetadata,
+  .defaultFields,
+  .temporalList,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .channelCounts li,
+  .availabilityList > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 479px) {
+  .resultPanel {
+    padding: 16px;
+  }
+
+  .section,
+  .channel,
+  .traceSummary,
+  .traceLevel {
+    padding: 12px;
+  }
+
+  .headingRow,
+  .channelHeading,
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination .inlineButton {
+    width: 100%;
+  }
+}

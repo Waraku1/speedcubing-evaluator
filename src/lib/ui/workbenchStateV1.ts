@@ -32,6 +32,8 @@ export type WorkbenchStateV1 = Readonly<{
   result: UiEvaluateResultV1 | null;
   error: UiPublicErrorV1 | null;
   resultDetailsExpanded: boolean;
+  tracePage: number;
+  selectedTraceRecordId: string | null;
 }>;
 
 export type WorkbenchActionV1 =
@@ -56,7 +58,12 @@ export type WorkbenchActionV1 =
       error: UiPublicErrorV1;
     }>
   | Readonly<{ type: "CANCEL"; epoch: number }>
-  | Readonly<{ type: "SET_RESULT_DETAILS"; expanded: boolean }>;
+  | Readonly<{ type: "SET_RESULT_DETAILS"; expanded: boolean }>
+  | Readonly<{ type: "SET_TRACE_PAGE"; page: number }>
+  | Readonly<{
+      type: "SELECT_TRACE_RECORD";
+      recordId: string | null;
+    }>;
 
 function phaseForValidation(
   validation: LocalCubeValidationV1
@@ -81,6 +88,8 @@ function replaceDraft(
     result: null,
     error: null,
     resultDetailsExpanded: false,
+    tracePage: 0,
+    selectedTraceRecordId: null,
   });
 }
 
@@ -98,6 +107,8 @@ export function createInitialWorkbenchStateV1(): WorkbenchStateV1 {
     result: null,
     error: null,
     resultDetailsExpanded: false,
+    tracePage: 0,
+    selectedTraceRecordId: null,
   });
 }
 
@@ -151,6 +162,9 @@ export function workbenchReducerV1(
         phase: "SUBMITTING",
         result: null,
         error: null,
+        resultDetailsExpanded: false,
+        tracePage: 0,
+        selectedTraceRecordId: null,
       });
 
     case "RECEIVE_SUCCESS":
@@ -165,6 +179,9 @@ export function workbenchReducerV1(
         phase: "SUCCESS",
         result: action.result,
         error: null,
+        resultDetailsExpanded: false,
+        tracePage: 0,
+        selectedTraceRecordId: null,
       });
 
     case "RECEIVE_ERROR":
@@ -179,6 +196,9 @@ export function workbenchReducerV1(
         phase: "ERROR",
         result: null,
         error: action.error,
+        resultDetailsExpanded: false,
+        tracePage: 0,
+        selectedTraceRecordId: null,
       });
 
     case "CANCEL":
@@ -194,12 +214,33 @@ export function workbenchReducerV1(
         phase: "CANCELLED",
         result: null,
         error: null,
+        resultDetailsExpanded: false,
+        tracePage: 0,
+        selectedTraceRecordId: null,
       });
 
     case "SET_RESULT_DETAILS":
       return Object.freeze({
         ...state,
         resultDetailsExpanded: action.expanded,
+        selectedTraceRecordId: action.expanded
+          ? state.selectedTraceRecordId
+          : null,
+      });
+
+    case "SET_TRACE_PAGE":
+      return !Number.isInteger(action.page) || action.page < 0
+        ? state
+        : Object.freeze({
+            ...state,
+            tracePage: action.page,
+            selectedTraceRecordId: null,
+          });
+
+    case "SELECT_TRACE_RECORD":
+      return Object.freeze({
+        ...state,
+        selectedTraceRecordId: action.recordId,
       });
   }
 }
