@@ -1,0 +1,307 @@
+"use client";
+
+import { useEffect, useReducer, useRef } from "react";
+
+import {
+  evaluateCube,
+  normalizeUiEvaluateErrorV1,
+  type EvaluateCubeOperationV1,
+} from "../../lib/ui/evaluateCube";
+import {
+  serializeCubeDraftV1,
+  type CubeDraftTokenV1,
+} from "../../lib/ui/cubeDraftV1";
+import {
+  createInitialWorkbenchStateV1,
+  workbenchReducerV1,
+} from "../../lib/ui/workbenchStateV1";
+import { CubeInputPanel } from "./CubeInputPanel";
+import styles from "./workbench.module.css";
+
+type ActiveOperation = Readonly<{
+  epoch: number;
+  operation: EvaluateCubeOperationV1;
+}>;
+
+export function EvaluatorWorkbench() {
+  const [state, dispatch] = useReducer(
+    workbenchReducerV1,
+    undefined,
+    createInitialWorkbenchStateV1
+  );
+  const operationRef = useRef<ActiveOperation | null>(null);
+  const epochRef = useRef(0);
+  const validationRef = useRef<HTMLDivElement | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const resultRef = useRef<HTMLHeadingElement | null>(null);
+  const runRef = useRef<HTMLButtonElement | null>(null);
+  const submitting = state.phase === "SUBMITTING";
+  const ready = state.validation.state === "READY";
+
+  useEffect(() => {
+    if (state.phase === "SUCCESS") {
+      resultRef.current?.focus();
+    } else if (state.phase === "ERROR") {
+      errorRef.current?.focus();
+    } else if (state.phase === "CANCELLED") {
+      runRef.current?.focus();
+    }
+  }, [state.phase]);
+
+  function focusSticker(index: number): void {
+    const sticker = document.querySelector<HTMLButtonElement>(
+      `[data-sticker-index="${index}"]`
+    );
+    sticker?.focus();
+  }
+
+  function focusValidationProblem(): void {
+    const index = state.validation.firstProblemIndex;
+    validationRef.current?.focus();
+    if (index !== null) {
+      dispatch({ type: "SET_ACTIVE_STICKER", index });
+      window.setTimeout(() => focusSticker(index), 0);
+    }
+  }
+
+  function confirmDraftReplacement(action: "example" | "reset"): boolean {
+    if (state.draftRevision === 0) {
+      return true;
+    }
+
+    const description = action === "example" ? "load the solved example" : "reset the cube";
+    return window.confirm(
+      `Your current draft will be replaced. Continue and ${description}?`
+    );
+  }
+
+  function handleRun(): void {
+    if (operationRef.current !== null) {
+      return;
+    }
+
+    if (!ready) {
+      focusValidationProblem();
+      return;
+    }
+
+    const epoch = Math.max(epochRef.current, state.requestEpoch) + 1;
+    epochRef.current = epoch;
+    const operation = evaluateCube({
+      facelets: serializeCubeDraftV1(state.draft),
+    });
+    operationRef.current = { epoch, operation };
+    dispatch({ type: "BEGIN_SUBMIT", epoch });
+
+    void operation.result.then(
+      (result) => {
+        if (operationRef.current?.epoch !== epoch) {
+          return;
+        }
+        operationRef.current = null;
+        dispatch({ type: "RECEIVE_SUCCESS", epoch, result });
+      },
+      (error: unknown) => {
+        if (operationRef.current?.epoch !== epoch) {
+          return;
+        }
+        operationRef.current = null;
+        dispatch({
+          type: "RECEIVE_ERROR",
+          epoch,
+          error: normalizeUiEvaluateErrorV1(error),
+        });
+      }
+    );
+  }
+
+  function handleCancel(): void {
+    const active = operationRef.current;
+    if (active === null) {
+      return;
+    }
+
+    operationRef.current = null;
+    active.operation.cancel();
+    dispatch({ type: "CANCEL", epoch: active.epoch });
+  }
+
+  function liveMessage(): string {
+    switch (state.phase) {
+      case "SUBMITTING":
+        return "Solving and generating Demand";
+      case "SUCCESS":
+        return "Analysis received";
+      case "ERROR":
+        return state.error?.message ?? "The evaluation request failed.";
+      case "CANCELLED":
+        return "Request cancelled. Cube draft preserved.";
+      default:
+        return state.validation.message;
+    }
+  }
+
+  return (
+    <div
+      className={styles.workbench}
+      data-has-result={state.phase === "SUCCESS"}
+      data-phase={state.phase}
+    >
+      <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
+        {liveMessage()}
+      </p>
+
+      <CubeInputPanel
+        activeStickerIndex={state.activeStickerIndex}
+        disabled={submitting}
+        draft={state.draft}
+        onActivateSticker={(index) =>
+          dispatch({ type: "SET_ACTIVE_STICKER", index })
+        }
+        onEditSticker={(index, token) =>
+          dispatch({ type: "EDIT_STICKER", index, token })
+        }
+        onFocusProblem={focusValidationProblem}
+        onSelectToken={(token: CubeDraftTokenV1) =>
+          dispatch({ type: "SELECT_TOKEN", token })
+        }
+        selectedToken={state.selectedToken}
+        validation={state.validation}
+        validationRef={validationRef}
+      />
+
+      <section aria-labelledby="submit-heading" className={styles.actionPanel}>
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.stepLabel}>Step 2</p>
+            <h2 id="submit-heading">Run server analysis</h2>
+          </div>
+        </div>
+        <p className={styles.sectionIntro}>
+          The server checks physical cube validity, verifies the solution, and
+          produces the bounded Domain Demand artifact.
+        </p>
+
+        <div className={styles.utilityActions}>
+          <button
+            className={styles.secondaryButton}
+            disabled={submitting}
+            onClick={() => {
+              if (confirmDraftReplacement("example")) {
+                dispatch({ type: "LOAD_SOLVED" });
+              }
+            }}
+            type="button"
+          >
+            Load solved example
+          </button>
+          <button
+            className={styles.secondaryButton}
+            disabled={submitting}
+            onClick={() => {
+              if (confirmDraftReplacement("reset")) {
+                dispatch({ type: "RESET" });
+              }
+            }}
+            type="button"
+          >
+            Reset cube
+          </button>
+        </div>
+        <p className={styles.exampleNote}>
+          The solved cube is an input example only; it is not observed,
+          detected, scanned, or human evidence.
+        </p>
+
+        <div className={styles.submitActions}>
+          <button
+            className={styles.primaryButton}
+            disabled={!ready || submitting}
+            onClick={handleRun}
+            ref={runRef}
+            type="button"
+          >
+            Run evaluation
+          </button>
+          {submitting ? (
+            <button
+              className={styles.cancelButton}
+              onClick={handleCancel}
+              type="button"
+            >
+              Cancel request
+            </button>
+          ) : null}
+        </div>
+
+        {submitting ? (
+          <div className={styles.requestStatus} data-testid="request-status">
+            <span aria-hidden="true" className={styles.statusMarker} />
+            <div>
+              <strong>Solving and generating Demand</strong>
+              <p>One evaluation request is active. Draft editing is paused.</p>
+            </div>
+          </div>
+        ) : null}
+
+        {state.phase === "CANCELLED" ? (
+          <div className={styles.cancelledStatus} data-testid="cancelled-status">
+            <strong>Request cancelled</strong>
+            <p>Your cube draft is unchanged and ready to submit again.</p>
+          </div>
+        ) : null}
+
+        {state.phase === "ERROR" && state.error !== null ? (
+          <div
+            className={styles.errorSummary}
+            data-testid="error-summary"
+            ref={errorRef}
+            role="alert"
+            tabIndex={-1}
+          >
+            <p className={styles.errorCode}>{state.error.code}</p>
+            <h3>Analysis could not be completed</h3>
+            <p>{state.error.message}</p>
+            <p>Your cube draft has been preserved.</p>
+            {state.error.retryable ? (
+              <button
+                className={styles.secondaryButton}
+                onClick={handleRun}
+                type="button"
+              >
+                Try again
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      {state.phase === "SUCCESS" && state.result !== null ? (
+        <section
+          aria-labelledby="result-heading"
+          className={styles.resultPanel}
+          data-testid="result-shell"
+        >
+          <p className={styles.stepLabel}>Server response</p>
+          <h2 id="result-heading" ref={resultRef} tabIndex={-1}>
+            Analysis received
+          </h2>
+          <p>
+            Detailed verified solution and Domain Demand results will be
+            rendered by the results module.
+          </p>
+          <dl className={styles.resultMetadata}>
+            <div>
+              <dt>Request</dt>
+              <dd className="mono">{state.result.requestId}</dd>
+            </div>
+            <div>
+              <dt>Build</dt>
+              <dd className="mono">{state.result.build.commit}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+    </div>
+  );
+}
