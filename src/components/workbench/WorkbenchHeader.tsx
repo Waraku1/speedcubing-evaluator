@@ -14,7 +14,7 @@ export function WorkbenchHeader() {
             server-verified cube solution. Downstream scoring is not part of
             this release.
           </p>
-          <p>Manual cube entry is the current acquisition path.</p>
+          <p>Manual entry is primary; an optional reviewed camera draft is available.</p>
         </div>
       </div>
     </header>

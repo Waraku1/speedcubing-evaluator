@@ -22,18 +22,27 @@ type CubeNetEditorProps = Readonly<{
   onSelectToken(token: CubeDraftTokenV1): void;
   onActivateSticker(index: number): void;
   onEditSticker(index: number, token: CubeDraftTokenV1): void;
+  canonicalNet?: boolean;
+  reviewMode?: boolean;
+  paletteName?: string;
 }>;
 
 function stickerLabel(
   face: CubeDraftFaceV1,
   indexWithinFace: number,
   token: CubeDraftTokenV1,
-  editable: boolean
+  editable: boolean,
+  includeColorName: boolean
 ): string {
   const row = Math.floor(indexWithinFace / 3) + 1;
   const column = (indexWithinFace % 3) + 1;
+  const colorName =
+    token === "N" ? "Unknown color" : CUBE_DRAFT_FACE_NAMES_V1[token];
   const status = token === "N" ? "Unknown" : "known";
-  return `${face} face, row ${row}, column ${column}, token ${token}, ${status}, ${editable ? "editable" : "fixed center"}`;
+  const tokenDescription = includeColorName
+    ? `token ${token}, ${colorName}`
+    : `token ${token}`;
+  return `${face} face, row ${row}, column ${column}, ${tokenDescription}, ${status}, ${editable ? "editable" : "fixed center"}`;
 }
 
 export function CubeNetEditor({
@@ -44,6 +53,9 @@ export function CubeNetEditor({
   onSelectToken,
   onActivateSticker,
   onEditSticker,
+  canonicalNet = false,
+  reviewMode = false,
+  paletteName = "sticker-palette",
 }: CubeNetEditorProps) {
   const stickerRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const activeFace = faceForStickerIndexV1(activeStickerIndex);
@@ -155,7 +167,7 @@ export function CubeNetEditor({
               <label className={styles.paletteOption} key={token}>
                 <input
                   checked={selectedToken === token}
-                  name="sticker-palette"
+                  name={paletteName}
                   onChange={() => onSelectToken(token)}
                   type="radio"
                   value={token}
@@ -192,7 +204,10 @@ export function CubeNetEditor({
         ))}
       </div>
 
-      <div className={styles.cubeNet} data-testid="cube-net-editor">
+      <div
+        className={`${styles.cubeNet} ${canonicalNet ? styles.canonicalNet : ""}`}
+        data-testid="cube-net-editor"
+      >
         {CUBE_DRAFT_FACES_V1.map((face, faceIndex) => (
           <section
             aria-label={`${face} ${CUBE_DRAFT_FACE_NAMES_V1[face]} face`}
@@ -209,9 +224,15 @@ export function CubeNetEditor({
                 const index = faceIndex * 9 + withinFace;
                 const token = draft[index];
                 const editable = isEditableStickerIndexV1(index);
-                const label = stickerLabel(face, withinFace, token, editable);
+                const label = stickerLabel(
+                  face,
+                  withinFace,
+                  token,
+                  editable,
+                  reviewMode
+                );
 
-                if (!editable) {
+                if (!editable && !reviewMode) {
                   return (
                     <div
                       aria-label={label}
@@ -223,6 +244,22 @@ export function CubeNetEditor({
                     >
                       <span aria-hidden="true">{token}</span>
                     </div>
+                  );
+                }
+
+                if (!editable) {
+                  return (
+                    <button
+                      aria-disabled="true"
+                      aria-label={label}
+                      className={styles.sticker}
+                      data-sticker-fixed="true"
+                      data-token={token}
+                      key={index}
+                      type="button"
+                    >
+                      <span aria-hidden="true">{token}</span>
+                    </button>
                   );
                 }
 

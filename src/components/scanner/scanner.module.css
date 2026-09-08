@@ -1,0 +1,287 @@
+.header {
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.headerInner {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 24px 32px;
+}
+
+.eyebrow,
+.stepLabel {
+  margin: 0 0 4px;
+  color: var(--ui-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.header h1,
+.launcher h2,
+.cameraPanel h2,
+.reviewPanel h2 {
+  margin: 0;
+}
+
+.header h1 {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+.header p:last-child {
+  max-width: 68ch;
+  margin: 8px 0 0;
+  color: var(--ui-muted);
+}
+
+.scanner {
+  display: grid;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  gap: 20px;
+}
+
+.navigation {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--ui-muted);
+}
+
+.navigation a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+.launcher,
+.cameraPanel,
+.reviewPanel {
+  padding: 24px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
+  box-shadow: 0 1px 2px rgb(23 33 43 / 6%);
+}
+
+.launcher p:not(.stepLabel),
+.cameraInstruction,
+.reviewIntro {
+  max-width: 70ch;
+  color: var(--ui-muted);
+}
+
+.cameraHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.localBadge {
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid #9bc4ac;
+  border-radius: 999px;
+  background: #f0f8f3;
+  color: #2f6f49;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.viewport {
+  position: relative;
+  width: min(100%, 640px);
+  aspect-ratio: 1;
+  margin: 20px auto 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-card);
+  background: #17212b;
+}
+
+.viewport:not([data-active="true"])::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #dce2e7;
+  content: "Camera off";
+  font-weight: 700;
+}
+
+.sourceVideo {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.previewCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.guide {
+  position: absolute;
+  z-index: 2;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-radius: 4px;
+  background: rgb(23 33 43 / 88%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.guideTop {
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.guideLeft {
+  bottom: 5%;
+  left: 5%;
+}
+
+.guideRight {
+  right: 5%;
+  bottom: 5%;
+}
+
+.status {
+  padding: 16px;
+  border: 1px solid #a8c4d5;
+  border-left: 4px solid var(--ui-info);
+  border-radius: var(--radius-card);
+  background: #edf6fa;
+  color: var(--ui-info);
+}
+
+.status[data-state="ERROR"] {
+  border-color: #d8a4a4;
+  border-left-color: var(--ui-error);
+  background: #fff3f3;
+  color: var(--ui-error);
+}
+
+.status[data-state="CANCELLED"] {
+  border-color: var(--ui-border);
+  border-left-color: var(--ui-muted);
+  background: var(--ui-subtle);
+  color: var(--ui-muted);
+}
+
+.status p {
+  margin: 4px 0 0;
+}
+
+.sampleProgress {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: var(--radius-control);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.secondaryButton {
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.reviewPanel {
+  display: grid;
+  gap: 20px;
+}
+
+.reviewIntro,
+.netScrollNote {
+  margin: 0;
+}
+
+.netScrollNote {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.reviewSummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.storageError {
+  margin: 0;
+  color: var(--ui-error);
+}
+
+@media (max-width: 479px) {
+  .headerInner,
+  .launcher,
+  .cameraPanel,
+  .reviewPanel {
+    padding: 16px;
+  }
+
+  .navigation,
+  .cameraHeading,
+  .reviewSummary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .guide {
+    font-size: 10px;
+  }
+}

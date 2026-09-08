@@ -212,6 +212,11 @@ button.sticker:disabled {
   opacity: 0.65;
 }
 
+button.sticker[aria-disabled="true"] {
+  cursor: default;
+  box-shadow: inset 0 0 0 2px rgb(23 33 43 / 18%);
+}
+
 .sticker[data-token="U"] {
   background: #ffffff;
   color: #17212b;
@@ -386,11 +391,22 @@ div.sticker {
     display: block;
   }
 
+  .cubeNet.canonicalNet {
+    display: grid;
+    overflow-x: auto;
+    justify-content: start;
+    padding: 2px 2px 12px;
+  }
+
   .face {
     display: none;
   }
 
   .face[data-active="true"] {
+    display: block;
+  }
+
+  .canonicalNet .face {
     display: block;
   }
 

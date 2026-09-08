@@ -764,7 +764,7 @@ test.describe("C4 manual evaluator workbench", () => {
     expect(names).not.toMatch(
       /onnxruntime|cube_pose\.onnx|\.wasm(?:\?|$)|\/detect(?:\?|$)/i
     );
-    await expect(page.locator('a[href="/detect"]')).toHaveCount(0);
+    await expect(page.locator('a[href="/detect"]')).toHaveCount(1);
     expect(encodedRootJs).toBeLessThanOrEqual(250 * 1024);
     expect(decodedRootJs).toBeLessThanOrEqual(800 * 1024);
   });

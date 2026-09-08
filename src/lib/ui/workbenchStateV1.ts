@@ -34,6 +34,7 @@ export type WorkbenchStateV1 = Readonly<{
   resultDetailsExpanded: boolean;
   tracePage: number;
   selectedTraceRecordId: string | null;
+  acquisitionMessage: string | null;
 }>;
 
 export type WorkbenchActionV1 =
@@ -45,6 +46,7 @@ export type WorkbenchActionV1 =
       token: CubeDraftTokenV1;
     }>
   | Readonly<{ type: "LOAD_SOLVED" }>
+  | Readonly<{ type: "IMPORT_SCANNER_DRAFT"; draft: CubeDraftV1 }>
   | Readonly<{ type: "RESET" }>
   | Readonly<{ type: "BEGIN_SUBMIT"; epoch: number }>
   | Readonly<{
@@ -90,6 +92,7 @@ function replaceDraft(
     resultDetailsExpanded: false,
     tracePage: 0,
     selectedTraceRecordId: null,
+    acquisitionMessage: null,
   });
 }
 
@@ -109,6 +112,7 @@ export function createInitialWorkbenchStateV1(): WorkbenchStateV1 {
     resultDetailsExpanded: false,
     tracePage: 0,
     selectedTraceRecordId: null,
+    acquisitionMessage: null,
   });
 }
 
@@ -142,6 +146,16 @@ export function workbenchReducerV1(
       return state.phase === "SUBMITTING"
         ? state
         : replaceDraft(state, createSolvedCubeDraftV1(), "READY");
+
+    case "IMPORT_SCANNER_DRAFT":
+      if (state.phase === "SUBMITTING") return state;
+      return Object.freeze({
+        ...replaceDraft(state, action.draft),
+        activeStickerIndex: 0,
+        selectedToken: "N",
+        acquisitionMessage:
+          "Reviewed camera draft imported. Confirm or correct it, then run evaluation manually.",
+      });
 
     case "RESET":
       return state.phase === "SUBMITTING"

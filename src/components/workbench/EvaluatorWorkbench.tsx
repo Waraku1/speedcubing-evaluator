@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useReducer, useRef } from "react";
 
 import {
@@ -15,6 +16,7 @@ import {
   createInitialWorkbenchStateV1,
   workbenchReducerV1,
 } from "../../lib/ui/workbenchStateV1";
+import { consumeScannerDraftHandoffV1 } from "../../lib/ui/scannerDraftHandoffV1";
 import { EvaluationResultPanel } from "../results/EvaluationResultPanel";
 import { CubeInputPanel } from "./CubeInputPanel";
 import styles from "./workbench.module.css";
@@ -77,6 +79,16 @@ export function EvaluatorWorkbench() {
     );
     sticker?.focus();
   }
+
+  useEffect(() => {
+    const draft = consumeScannerDraftHandoffV1(window.sessionStorage);
+    if (draft === null) return;
+
+    window.setTimeout(() => {
+      dispatch({ type: "IMPORT_SCANNER_DRAFT", draft });
+      window.setTimeout(() => focusSticker(0), 0);
+    }, 0);
+  }, []);
 
   function focusValidationProblem(): void {
     const index = state.validation.firstProblemIndex;
@@ -160,7 +172,7 @@ export function EvaluatorWorkbench() {
       case "CANCELLED":
         return "Request cancelled. Cube draft preserved.";
       default:
-        return state.validation.message;
+        return state.acquisitionMessage ?? state.validation.message;
     }
   }
 
@@ -173,6 +185,20 @@ export function EvaluatorWorkbench() {
       <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
         {liveMessage()}
       </p>
+
+      <section aria-labelledby="acquisition-heading" className={styles.acquisitionPanel}>
+        <div>
+          <p className={styles.stepLabel}>Optional helper</p>
+          <h2 id="acquisition-heading">Prefer a camera-assisted draft?</h2>
+          <p>
+            Scan two poses locally, review every sticker, then return here for the
+            same manual confirmation and Run evaluation step.
+          </p>
+        </div>
+        <Link className={styles.scannerLink} href="/detect" prefetch={false}>
+          Open optional camera scanner
+        </Link>
+      </section>
 
       <CubeInputPanel
         activeStickerIndex={state.activeStickerIndex}

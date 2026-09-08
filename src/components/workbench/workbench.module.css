@@ -54,13 +54,49 @@
 }
 
 .inputPanel,
-.actionPanel {
+.actionPanel,
+.acquisitionPanel {
   min-width: 0;
   padding: 24px;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-panel);
   background: var(--ui-surface);
   box-shadow: 0 1px 2px rgb(23 33 43 / 6%);
+}
+
+.acquisitionPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.acquisitionPanel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.acquisitionPanel p:last-child {
+  max-width: 66ch;
+  margin: 6px 0 0;
+  color: var(--ui-muted);
+}
+
+.scannerLink {
+  display: inline-flex;
+  min-height: 44px;
+  flex: none;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  color: var(--ui-accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.scannerLink:hover {
+  background: var(--ui-subtle);
 }
 
 .sectionHeading {
@@ -245,8 +281,18 @@
   }
 
   .inputPanel,
-  .actionPanel {
+  .actionPanel,
+  .acquisitionPanel {
     padding: 16px;
+  }
+
+  .acquisitionPanel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scannerLink {
+    justify-content: center;
   }
 
   .utilityActions,
