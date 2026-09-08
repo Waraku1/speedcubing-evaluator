@@ -19,10 +19,18 @@ export const UI_EVALUATE_ERROR_CODES_V1 = [
 export type UiEvaluateErrorCodeV1 =
   (typeof UI_EVALUATE_ERROR_CODES_V1)[number];
 
+export type UiErrorFocusV1 =
+  | "CUBE_VALIDATION"
+  | "ERROR_SUMMARY"
+  | "RUN_BUTTON";
+
 export type UiPublicErrorV1 = Readonly<{
   code: UiEvaluateErrorCodeV1;
-  message: string;
+  title: string;
+  explanation: string;
   retryable: boolean;
+  focus: UiErrorFocusV1;
+  requestId?: string;
 }>;
 
 export type UiSolutionV1 = Readonly<{

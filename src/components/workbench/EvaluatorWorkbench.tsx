@@ -39,14 +39,36 @@ export function EvaluatorWorkbench() {
   const ready = state.validation.state === "READY";
 
   useEffect(() => {
+    return () => {
+      const active = operationRef.current;
+      operationRef.current = null;
+
+      if (active !== null) {
+        epochRef.current = Math.max(epochRef.current, active.epoch) + 1;
+        active.operation.cancel();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (state.phase === "SUCCESS") {
       resultRef.current?.focus();
     } else if (state.phase === "ERROR") {
-      errorRef.current?.focus();
+      switch (state.error?.focus) {
+        case "CUBE_VALIDATION":
+          validationRef.current?.focus();
+          break;
+        case "RUN_BUTTON":
+          runRef.current?.focus();
+          break;
+        case "ERROR_SUMMARY":
+          errorRef.current?.focus();
+          break;
+      }
     } else if (state.phase === "CANCELLED") {
       runRef.current?.focus();
     }
-  }, [state.phase]);
+  }, [state.error?.focus, state.phase]);
 
   function focusSticker(index: number): void {
     const sticker = document.querySelector<HTMLButtonElement>(
@@ -133,7 +155,7 @@ export function EvaluatorWorkbench() {
       case "SUCCESS":
         return "Analysis received";
       case "ERROR":
-        return state.error?.message ?? "The evaluation request failed.";
+        return state.error?.explanation ?? "The evaluation request failed.";
       case "CANCELLED":
         return "Request cancelled. Cube draft preserved.";
       default:
@@ -260,9 +282,15 @@ export function EvaluatorWorkbench() {
             tabIndex={-1}
           >
             <p className={styles.errorCode}>{state.error.code}</p>
-            <h3>Analysis could not be completed</h3>
-            <p>{state.error.message}</p>
+            <h3>{state.error.title}</h3>
+            <p>{state.error.explanation}</p>
             <p>Your cube draft has been preserved.</p>
+            {state.error.requestId !== undefined ? (
+              <p>
+                Support request ID:{" "}
+                <span className="mono">{state.error.requestId}</span>
+              </p>
+            ) : null}
             {state.error.retryable ? (
               <button
                 className={styles.secondaryButton}

@@ -342,9 +342,119 @@ test.describe("C4 manual evaluator workbench", () => {
     await expect(summary).toBeFocused();
     await expect(summary).toContainText("SOLVER_UNAVAILABLE");
     await expect(summary).toContainText("temporarily unavailable");
+    await expect(summary).toContainText("request:error-e2e");
     await expect(summary).not.toContainText("worker.ts");
     await expect(summary.getByRole("button", { name: "Try again" })).toBeVisible();
     await expect(page.locator('[data-sticker-editable="true"][data-token="N"]')).toHaveCount(0);
+  });
+
+  test("C4R-03 focuses validation for a server-rejected cube without changing local status", async ({ page }) => {
+    await page.route("**/api/evaluate", async (route) => {
+      await route.fulfill({
+        json: {
+          schemaVersion: "1.0",
+          requestId: "request:invalid-cube-e2e",
+          error: {
+            code: "INVALID_CUBE_STATE",
+            message: "raw physical validation detail",
+            stage: "VALIDATION",
+            retryable: false,
+          },
+        },
+        status: 422,
+      });
+    });
+
+    await loadSolvedExample(page);
+    await page.getByRole("button", { name: "Run evaluation" }).click();
+
+    const validation = page.locator('[data-state="READY"]');
+    await expect(validation).toBeFocused();
+    await expect(validation).toContainText("Ready for server validation");
+    await expect(validation).toContainText(
+      "Physical solvability is checked only after submission by the server."
+    );
+    await expect(page.getByTestId("error-summary")).not.toContainText(
+      "raw physical validation detail"
+    );
+  });
+
+  test("C4R-10 cancels and invalidates one active operation when the workbench unmounts", async ({ page }) => {
+    let requestCount = 0;
+    let releaseResponse: () => void = () => undefined;
+    const responseGate = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+
+    await page.evaluate(() => {
+      const nativeFetch = window.fetch.bind(window);
+      const observedWindow = window as typeof window & {
+        __c4rAbortCount: number;
+      };
+      observedWindow.__c4rAbortCount = 0;
+
+      window.fetch = (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const signal = init?.signal;
+
+        if (url.endsWith("/api/evaluate") && signal != null) {
+          signal.addEventListener(
+            "abort",
+            () => {
+              observedWindow.__c4rAbortCount += 1;
+            },
+            { once: true }
+          );
+        }
+
+        return nativeFetch(input, init);
+      };
+    });
+    await page.route("**/api/evaluate", async (route) => {
+      requestCount += 1;
+      await responseGate;
+      await route
+        .fulfill({ json: closedSuccessFixture(), status: 200 })
+        .catch(() => undefined);
+    });
+
+    await loadSolvedExample(page);
+    await page.getByRole("button", { name: "Run evaluation" }).click();
+    await expect(page.getByTestId("request-status")).toBeVisible();
+    expect(requestCount).toBe(1);
+
+    await page.evaluate(() => {
+      const routedWindow = window as typeof window & {
+        next: { router: { push(href: string): void } };
+      };
+      routedWindow.next.router.push("/detect");
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { __c4rAbortCount: number })
+              .__c4rAbortCount
+        )
+      )
+      .toBe(1);
+    releaseResponse();
+    await page.waitForTimeout(200);
+    expect(
+      await page.evaluate(
+        () =>
+          (window as typeof window & { __c4rAbortCount: number })
+            .__c4rAbortCount
+      )
+    ).toBe(1);
+    await expect(page.getByTestId("request-status")).toHaveCount(0);
+    await expect(page.getByTestId("result-shell")).toHaveCount(0);
   });
 
   test("PUI-17 keeps scanner, camera, solver, and evaluator runtimes out of root resources", async ({ page }) => {

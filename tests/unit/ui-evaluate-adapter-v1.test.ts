@@ -5,6 +5,10 @@ import {
   parseEvaluateResponseV1,
   serializeEvaluateRequestV1,
 } from "../../src/lib/ui/evaluateCube";
+import type {
+  UiEvaluateErrorCodeV1,
+  UiPublicErrorV1,
+} from "../../src/lib/ui/evaluateUiTypesV1";
 import {
   createInitialWorkbenchStateV1,
   workbenchReducerV1,
@@ -192,6 +196,39 @@ function incompatibleCode(payload: unknown, responseOk = true): string | null {
   }
 }
 
+function normalizedServerError(
+  code: UiEvaluateErrorCodeV1,
+  stage: string,
+  retryable: boolean,
+  message = "/private/worker.ts stderr"
+): UiPublicErrorV1 {
+  try {
+    parseEvaluateResponseV1(
+      {
+        schemaVersion: "1.0",
+        requestId: REQUEST_ID,
+        error: { code, message, stage, retryable },
+      },
+      false
+    );
+  } catch (error) {
+    return normalizeUiEvaluateErrorV1(error);
+  }
+
+  throw new Error("Expected the server error to reject");
+}
+
+function statusRecordFor(
+  payload: Record<string, unknown>,
+  channel: "grip" | "finger" | "orientation" | "continuity"
+): Record<string, unknown> {
+  const result = recordAt(payload, "result");
+  const demand = recordAt(result, "domainDemand");
+  const episode = recordAt(demand, "executionEpisode");
+  const consequences = recordAt(episode, "t3Consequences");
+  return recordAt(recordAt(consequences, channel), "statusOnlyRecord");
+}
+
 describe("C4 evaluate adapter", () => {
   it("C4-07 serializes only the exact C3R request body", () => {
     const body = serializeEvaluateRequestV1("U".repeat(54));
@@ -297,16 +334,18 @@ describe("C4 evaluate adapter", () => {
       } catch (error) {
         const normalized = normalizeUiEvaluateErrorV1(error);
         expect(normalized).toMatchObject({ code, retryable });
-        expect(normalized.message).not.toContain("worker.ts");
-        expect(normalized.message).not.toContain("stderr");
+        expect(normalized.explanation).not.toContain("worker.ts");
+        expect(normalized.explanation).not.toContain("stderr");
       }
     }
 
     expect(normalizeUiEvaluateErrorV1(new Error("socket secret"))).toEqual({
       code: "NETWORK_UNAVAILABLE",
-      message:
+      title: "Evaluation service unavailable",
+      explanation:
         "The evaluation service could not be reached. Check your connection and try again.",
       retryable: true,
+      focus: "ERROR_SUMMARY",
     });
   });
 
@@ -343,5 +382,118 @@ describe("C4 evaluate adapter", () => {
     );
     expect(edited.phase).toBe("ERROR");
     expect(edited.draft).toBe(state.draft);
+  });
+});
+
+describe("C4R quality reconciliation", () => {
+  it("C4R-01 preserves the validated server request ID in the public error", () => {
+    const normalized = normalizedServerError(
+      "INTERNAL_FAILURE",
+      "INTERNAL",
+      false
+    );
+
+    expect(normalized.requestId).toBe(REQUEST_ID);
+  });
+
+  it("C4R-02 never carries the raw server message into the public error", () => {
+    const rawMessage = "/private/worker.ts stack and stderr";
+    const normalized = normalizedServerError(
+      "INTERNAL_FAILURE",
+      "INTERNAL",
+      false,
+      rawMessage
+    );
+
+    expect(JSON.stringify(normalized)).not.toContain(rawMessage);
+    expect(JSON.stringify(normalized)).not.toContain("worker.ts");
+    expect(normalized.explanation).toBe(
+      "The evaluation request could not be completed."
+    );
+  });
+
+  it("C4R-03 focuses cube validation for INVALID_CUBE_STATE", () => {
+    expect(
+      normalizedServerError("INVALID_CUBE_STATE", "VALIDATION", false)
+    ).toMatchObject({
+      code: "INVALID_CUBE_STATE",
+      focus: "CUBE_VALIDATION",
+      retryable: false,
+    });
+  });
+
+  it("C4R-04 focuses cube validation for UNSOLVABLE_CUBE", () => {
+    expect(
+      normalizedServerError("UNSOLVABLE_CUBE", "VALIDATION", false)
+    ).toMatchObject({
+      code: "UNSOLVABLE_CUBE",
+      focus: "CUBE_VALIDATION",
+      retryable: false,
+    });
+  });
+
+  it("C4R-05 focuses retryable solver failures on the error summary", () => {
+    const contracts = [
+      ["SOLVER_UNAVAILABLE", "SOLVER"],
+      ["SOLVER_TIMEOUT", "SOLVER"],
+      ["SOLUTION_VERIFICATION_FAILED", "VERIFICATION"],
+    ] as const;
+
+    for (const [code, stage] of contracts) {
+      expect(normalizedServerError(code, stage, true)).toMatchObject({
+        code,
+        focus: "ERROR_SUMMARY",
+        retryable: true,
+      });
+    }
+  });
+
+  it("C4R-06 focuses the run button after cancellation", () => {
+    expect(
+      normalizeUiEvaluateErrorV1(
+        new DOMException("transport detail", "AbortError")
+      )
+    ).toEqual({
+      code: "REQUEST_CANCELLED",
+      title: "Request cancelled",
+      explanation: "The evaluation request was cancelled.",
+      retryable: false,
+      focus: "RUN_BUTTON",
+    });
+  });
+
+  it("C4R-07 rejects Grip with a non-grip status scope", () => {
+    const payload = successFixture();
+    statusRecordFor(payload, "grip").scope = "finger";
+
+    expect(incompatibleCode(payload)).toBe("INCOMPATIBLE_RESPONSE");
+  });
+
+  it("C4R-08 rejects Finger, Orientation, and Continuity scope mismatches", () => {
+    const mismatches = [
+      ["finger", "orientation"],
+      ["orientation", "continuity"],
+      ["continuity", "grip"],
+    ] as const;
+
+    for (const [channel, wrongScope] of mismatches) {
+      const payload = successFixture();
+      statusRecordFor(payload, channel).scope = wrongScope;
+      expect(incompatibleCode(payload)).toBe("INCOMPATIBLE_RESPONSE");
+    }
+  });
+
+  it("C4R-09 accepts the valid C3R status-only fixture", () => {
+    const parsed = parseEvaluateResponseV1(successFixture(), true);
+
+    expect(parsed.demand.schemaId).toBe("SPEC-DM-001");
+    expect(parsed.demand.executionEpisode).toMatchObject({
+      t3Consequences: {
+        grip: { statusOnlyRecord: { scope: "grip" } },
+        finger: { statusOnlyRecord: { scope: "finger" } },
+        orientation: { statusOnlyRecord: { scope: "orientation" } },
+        continuity: { statusOnlyRecord: { scope: "continuity" } },
+      },
+    });
   });
 });
