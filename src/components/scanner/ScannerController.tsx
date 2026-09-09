@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  ScannerRuntimeV1,
   SCANNER_RUNTIME_LIMITS_V1,
+  ScannerRuntimeV1,
   type ScannerRuntimeFailureV1,
 } from "../../lib/detect/scannerRuntimeV1";
 import {
@@ -15,7 +15,11 @@ import {
   type ScanPoseNumberV1,
 } from "../../lib/detect/scanPoseV1";
 import type { CubeDraftTokenV1, CubeDraftV1 } from "../../lib/ui/cubeDraftV1";
-import { writeScannerDraftHandoffV1 } from "../../lib/ui/scannerDraftHandoffV1";
+import {
+  SCANNER_DRAFT_HANDOFF_STORAGE_KEY_V1,
+  createScannerDraftHandoffV1,
+  serializeScannerDraftHandoffV1,
+} from "../../lib/ui/scannerDraftHandoffV1";
 import { CameraViewport } from "./CameraViewport";
 import { ScanReview } from "./ScanReview";
 import { ScannerLauncher } from "./ScannerLauncher";
@@ -61,6 +65,7 @@ export function ScannerController() {
     CanonicalPoseCaptureV1<CubeDraftTokenV1> | null
   >(null);
   const nextPoseRef = useRef<ScanPoseNumberV1>(1);
+  const handoffInFlightRef = useRef(false);
   const [state, setState] = useState<ScannerStateV1>("IDLE");
   const [message, setMessage] = useState(
     "The camera and local model are off until you choose Start camera."
@@ -166,24 +171,59 @@ export function ScannerController() {
   }
 
   function useReviewedDraft(draft: CubeDraftV1): void {
+    if (handoffInFlightRef.current) return;
+
+    let serializedHandoff: string;
+    try {
+      serializedHandoff = serializeScannerDraftHandoffV1(
+        createScannerDraftHandoffV1(draft)
+      );
+    } catch {
+      setStorageError(
+        "The reviewed draft is not valid for transfer. Your review is still here."
+      );
+      return;
+    }
+
+    handoffInFlightRef.current = true;
     setStorageError(null);
     setHandoffBusy(true);
-    try {
-      writeScannerDraftHandoffV1(window.sessionStorage, draft);
-      void runtimeRef.current?.cleanup().finally(() => router.push("/"));
-    } catch {
-      setHandoffBusy(false);
-      setStorageError(
-        "This browser could not store the reviewed draft for one-time transfer. Your review is still here."
-      );
-    }
+    void (async () => {
+      try {
+        const scannerRuntime = runtimeRef.current;
+        if (scannerRuntime === null) {
+          throw new Error("Scanner runtime is unavailable for cleanup.");
+        }
+
+        // Resolving cleanup is the runtime's release boundary: tracks, worker,
+        // animation frame, timers, and lifecycle listeners have all been released.
+        await scannerRuntime.cleanup();
+        window.sessionStorage.setItem(
+          SCANNER_DRAFT_HANDOFF_STORAGE_KEY_V1,
+          serializedHandoff
+        );
+        router.push("/");
+      } catch {
+        handoffInFlightRef.current = false;
+        setHandoffBusy(false);
+        setStorageError(
+          "This browser could not safely transfer the reviewed draft. Your review is still here."
+        );
+      }
+    })();
   }
 
   const cameraActive = !["IDLE", "REVIEW", "ERROR", "CANCELLED"].includes(state);
   const canCapture = state === "READY";
 
   return (
-    <div className={styles.scanner} data-scanner-state={state}>
+    <div
+      className={styles.scanner}
+      data-accepted-samples={acceptedSamples}
+      data-handoff-busy={handoffBusy}
+      data-review-ready={reviewDraft !== null}
+      data-scanner-state={state}
+    >
       <nav aria-label="Scanner navigation" className={styles.navigation}>
         <Link href="/" prefetch={false}>
           Use manual cube entry

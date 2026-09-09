@@ -187,7 +187,7 @@ describe("C5 scanner geometry and color consistency", () => {
     ).toBe("UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB");
   });
 
-  it("SC-10 rejects invalid/degenerate geometry before sampling", () => {
+  it("rejects invalid/degenerate geometry before sampling", () => {
     const valid: CubePoseV1 = {
       center: { x: 0.5, y: 0.5 },
       top: { x: 0.5, y: 0.08 },
@@ -217,7 +217,7 @@ describe("C5 scanner geometry and color consistency", () => {
 });
 
 describe("C5 scanner handoff and runtime bounds", () => {
-  it("SC-04 keeps worker messages closed and rejects added or invalid fields", () => {
+  it("keeps worker messages closed and rejects added or invalid fields", () => {
     expect(
       isScannerWorkerInboundV1({
         type: "LOAD_MODEL",
@@ -249,7 +249,7 @@ describe("C5 scanner handoff and runtime bounds", () => {
     ).toBe(false);
   });
 
-  it("SC-05 / PB-09 binds the content-addressed model and scheduler ceilings", () => {
+  it("PB-08 / PB-09 binds the content-addressed model and scheduler ceilings", () => {
     expect(SCANNER_MODEL_V1).toEqual({
       url: "/models/cube_pose.284726d2638cc8ba.onnx",
       sha256: "284726d2638cc8ba56dbcdb8b56109e26fcd362c689e5571c6e8b0846190af7e",
@@ -261,7 +261,7 @@ describe("C5 scanner handoff and runtime bounds", () => {
     expect(SCANNER_RUNTIME_LIMITS_V1.inferenceTimeoutMs).toBe(2_000);
   });
 
-  it("SC-15 accepts only the exact reviewed, bounded handoff schema", () => {
+  it("SC-13 accepts only the exact reviewed, bounded handoff schema", () => {
     const handoff = createScannerDraftHandoffV1(createSolvedCubeDraftV1());
     const serialized = serializeScannerDraftHandoffV1(handoff);
 
@@ -288,7 +288,7 @@ describe("C5 scanner handoff and runtime bounds", () => {
     ).toBeNull();
   });
 
-  it("SC-16 deletes a handoff before validation and cannot replay it", () => {
+  it("SC-13 deletes a handoff before validation and cannot replay it", () => {
     const values = new Map<string, string>();
     const events: string[] = [];
     const storage = {
@@ -313,7 +313,7 @@ describe("C5 scanner handoff and runtime bounds", () => {
     expect(consumeScannerDraftHandoffV1(storage)).toBeNull();
   });
 
-  it("SC-16 imports into the ordinary manual state without submitting", () => {
+  it("SC-13 imports into the ordinary manual state without submitting", () => {
     const initial = createInitialWorkbenchStateV1();
     const imported = workbenchReducerV1(initial, {
       type: "IMPORT_SCANNER_DRAFT",
