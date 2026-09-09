@@ -181,6 +181,7 @@ describe("C3R production contract reconciliation", () => {
     const productionSources = [
       "src/app/api/evaluate/route.ts",
       "src/lib/integration/AtomicDemandStopServiceV1.ts",
+      "src/lib/integration/evaluateRouteV1.ts",
       "src/lib/integration/SolutionTraceBuilderV1.ts",
     ]
       .map((fileName) =>

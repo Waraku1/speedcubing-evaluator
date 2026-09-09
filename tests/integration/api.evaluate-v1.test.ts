@@ -2,12 +2,12 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import {
-  GET,
   MAX_EVALUATE_BODY_BYTES_V1,
-  POST,
   createEvaluatePostHandlerV1,
   createMethodNotAllowedHandlerV1,
-} from "../../src/app/api/evaluate/route";
+} from "../../src/lib/integration/evaluateRouteV1";
+import * as evaluateRouteModule from "../../src/app/api/evaluate/route";
+import { GET, POST } from "../../src/app/api/evaluate/route";
 import { applyMoves } from "../../src/lib/cube/moves";
 import { createCubeFaceletStateV1 } from "../../src/lib/cube/cubeStateV1";
 import { EvaluatorPipeline } from "../../src/lib/evaluator/pipeline/EvaluatorPipeline";
@@ -241,6 +241,19 @@ afterAll(async () => {
 });
 
 describe("C3R POST /api/evaluate", () => {
+  it("C7-B0 exposes only Next-supported route module exports", () => {
+    expect(Object.keys(evaluateRouteModule).sort()).toEqual([
+      "DELETE",
+      "GET",
+      "HEAD",
+      "OPTIONS",
+      "PATCH",
+      "POST",
+      "PUT",
+      "runtime",
+    ]);
+  });
+
   it(
     "runs the real SolverV1 and returns verified status-only Demand",
     async () => {
