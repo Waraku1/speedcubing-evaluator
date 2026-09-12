@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { Worker } from "node:worker_threads";
 
 import {
   MAX_EVALUATE_BODY_BYTES_V1,
@@ -18,6 +19,7 @@ import {
 import { EvaluateV1Error } from "../../src/lib/integration/evaluateErrorsV1";
 import { SolutionTraceBuilderV1 } from "../../src/lib/integration/SolutionTraceBuilderV1";
 import { solverV1 } from "../../src/lib/solver/SolverV1";
+import { CubeJsWorkerPoolV1 } from "../../src/lib/solver/cubeJsWorkerPoolV1";
 import { SolverV1Error } from "../../src/lib/solver/solverErrorsV1";
 import { verifySolutionV1 } from "../../src/lib/solver/solutionVerifierV1";
 import type {
@@ -234,6 +236,48 @@ function twistedCorner(): string {
     facelets[8],
   ];
   return facelets.join("");
+}
+
+function swappedFacelets(left: number, right: number): string {
+  const facelets = SOLVED_FACELETS_V1.split("");
+  [facelets[left], facelets[right]] = [facelets[right], facelets[left]];
+  return facelets.join("");
+}
+
+async function waitForPool(
+  predicate: () => boolean,
+  timeoutMs = 2_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for the bounded solver pool");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function gatedReplyWorker(gate: Int32Array): Worker {
+  return new Worker(
+    `
+      "use strict";
+      const { parentPort, workerData } = require("node:worker_threads");
+      const gate = new Int32Array(workerData.gate);
+      parentPort.postMessage({ type: "READY" });
+      parentPort.on("message", (request) => {
+        if (!request.facelets.startsWith("warm-")) {
+          Atomics.wait(gate, 0, 0);
+        }
+        parentPort.postMessage({
+          type: "SOLVED",
+          jobId: request.jobId,
+          solution: ""
+        });
+      });
+    `,
+    { eval: true, workerData: { gate: gate.buffer } }
+  );
 }
 
 afterAll(async () => {
@@ -574,7 +618,7 @@ describe("C3R POST /api/evaluate", () => {
     expect(defaultMethodResponse.status).toBe(405);
   });
 
-  it("maps invalid and physically unsolvable cubes to closed 422 errors", async () => {
+  it("B-02 rejects four representation-valid physical impossibilities before solving", async () => {
     const solver = solverReturning([]);
     const handler = handlerFor(
       new AtomicDemandStopServiceV1({
@@ -583,19 +627,211 @@ describe("C3R POST /api/evaluate", () => {
       })
     );
 
-    for (const [facelets, code] of [
-      ["short", "INVALID_CUBE_STATE"],
-      [twistedCorner(), "UNSOLVABLE_CUBE"],
-    ] as const) {
+    const physicalInvalidCases = [
+      ["single flipped edge", swappedFacelets(5, 10)],
+      ["single twisted corner", twistedCorner()],
+      ["edge/corner permutation parity mismatch", swappedFacelets(10, 19)],
+      ["duplicate/impossible cubie composition", swappedFacelets(9, 18)],
+    ] as const;
+
+    for (const [fixtureName, facelets] of physicalInvalidCases) {
       const response = await handler(jsonRequest(apiRequest(facelets)));
       const body = await errorBody(response);
 
       expect(response.status).toBe(422);
-      expect(body.error.code).toBe(code);
-      expect(body.error.stage).toBe("VALIDATION");
+      expect(body).toEqual({
+        schemaVersion: "1.0",
+        requestId: REQUEST_ID,
+        error: {
+          code: "UNSOLVABLE_CUBE",
+          message: "The cube state is not physically solvable.",
+          stage: "VALIDATION",
+          retryable: false,
+        },
+      });
+      expect(body).not.toHaveProperty("result");
+      expect(JSON.stringify(body), fixtureName).not.toMatch(
+        /domainDemand|transitionTrace|solverRunId/
+      );
     }
 
     expect(solver.solve).not.toHaveBeenCalled();
+  });
+
+  it("B-03 bounds real pool ownership at two active and eight queued HTTP jobs", async () => {
+    const releaseGate = new Int32Array(new SharedArrayBuffer(4));
+    const pool = new CubeJsWorkerPoolV1({
+      maxWorkers: 2,
+      maxQueueLength: 8,
+      deadlineMs: 4_000,
+      workerFactory: () => gatedReplyWorker(releaseGate),
+    });
+
+    try {
+      await Promise.all([pool.solve("warm-a"), pool.solve("warm-b")]);
+      await waitForPool(() => pool.stats().readyWorkers === 2);
+      expect(pool.stats()).toMatchObject({
+        workers: 2,
+        readyWorkers: 2,
+        activeJobs: 0,
+        queuedJobs: 0,
+      });
+
+      let requestCounter = 0;
+      const service = new AtomicDemandStopServiceV1({
+        solver: {
+          solve: vi.fn(async (input, options) => {
+            await pool.solve(input.stateId, options?.signal);
+            return resultFor(input, []);
+          }),
+        },
+        buildCommit: BUILD_COMMIT,
+      });
+      const handler = createEvaluatePostHandlerV1(
+        service,
+        () => `request:capacity-${++requestCounter}`
+      );
+      const firstActive = [
+        handler(jsonRequest({ ...apiRequest(), clientRequestId: "capacity-0" })),
+        handler(jsonRequest({ ...apiRequest(), clientRequestId: "capacity-1" })),
+      ];
+
+      await waitForPool(() => pool.stats().activeJobs === 2);
+
+      const burst = Array.from({ length: 11 }, (_, index) =>
+        handler(
+          jsonRequest({
+            ...apiRequest(),
+            clientRequestId: `capacity-${index + 2}`,
+          })
+        )
+      );
+
+      await waitForPool(() => pool.stats().queuedJobs === 8);
+      expect(pool.stats()).toMatchObject({
+        workers: 2,
+        activeJobs: 2,
+        queuedJobs: 8,
+      });
+
+      Atomics.store(releaseGate, 0, 1);
+      Atomics.notify(releaseGate, 0);
+
+      const responses = await Promise.all([...firstActive, ...burst]);
+      const successes = responses.filter((response) => response.status === 200);
+      const overloads = responses.filter((response) => response.status === 503);
+
+      expect(successes).toHaveLength(10);
+      expect(overloads).toHaveLength(3);
+
+      const successBodies = await Promise.all(successes.map(successBody));
+      expect(new Set(successBodies.map((body) => body.requestId)).size).toBe(10);
+      expect(
+        new Set(successBodies.map((body) => body.result.cubeState.stateId)).size
+      ).toBe(1);
+
+      for (const response of overloads) {
+        expect(await errorBody(response)).toMatchObject({
+          error: {
+            code: "SOLVER_UNAVAILABLE",
+            stage: "SOLVER",
+            retryable: true,
+          },
+        });
+      }
+
+      expect(pool.stats()).toMatchObject({ activeJobs: 0, queuedJobs: 0 });
+
+      const followUp = await handler(
+        jsonRequest({ ...apiRequest(), clientRequestId: "capacity-follow-up" })
+      );
+      expect(followUp.status).toBe(200);
+      expect((await successBody(followUp)).requestId).toBe(
+        "request:capacity-14"
+      );
+      expect(pool.stats()).toMatchObject({ activeJobs: 0, queuedJobs: 0 });
+    } finally {
+      await pool.close();
+    }
+  }, 10_000);
+
+  it("B-04 maps verifier, trace, and Demand port faults atomically through HTTP", async () => {
+    const traceBuilder = new SolutionTraceBuilderV1();
+    const demandPipeline = new EvaluatorPipeline();
+    const traceAfterVerifier = vi.fn(traceBuilder.build.bind(traceBuilder));
+    const demandAfterVerifier = vi.fn(
+      demandPipeline.advanceToDemand.bind(demandPipeline)
+    );
+    const demandAfterTrace = vi.fn(
+      demandPipeline.advanceToDemand.bind(demandPipeline)
+    );
+    const rawDiagnostic = "/private/runtime/fault.ts: raw stack and facelets";
+    const cases = [
+      {
+        code: "SOLUTION_VERIFICATION_FAILED",
+        status: 502,
+        stage: "VERIFICATION",
+        service: new AtomicDemandStopServiceV1({
+          solver: solverReturning([]),
+          verifier: () => {
+            throw new Error(rawDiagnostic);
+          },
+          traceBuilder: { build: traceAfterVerifier },
+          evaluatorPipeline: { advanceToDemand: demandAfterVerifier },
+          buildCommit: BUILD_COMMIT,
+        }),
+      },
+      {
+        code: "TRANSITION_GENERATION_FAILED",
+        status: 500,
+        stage: "TRANSITION",
+        service: new AtomicDemandStopServiceV1({
+          solver: solverReturning([]),
+          traceBuilder: {
+            build: () => {
+              throw new Error(rawDiagnostic);
+            },
+          },
+          evaluatorPipeline: { advanceToDemand: demandAfterTrace },
+          buildCommit: BUILD_COMMIT,
+        }),
+      },
+      {
+        code: "DEMAND_CONTRACT_FAILED",
+        status: 500,
+        stage: "DEMAND",
+        service: new AtomicDemandStopServiceV1({
+          solver: solverReturning([]),
+          evaluatorPipeline: {
+            advanceToDemand: () => {
+              throw new Error(rawDiagnostic);
+            },
+          },
+          buildCommit: BUILD_COMMIT,
+        }),
+      },
+    ] as const;
+
+    for (const fault of cases) {
+      const response = await handlerFor(fault.service)(
+        jsonRequest(apiRequest())
+      );
+      const body = await errorBody(response);
+      const serialized = JSON.stringify(body);
+
+      expect(response.status).toBe(fault.status);
+      expect(body.error).toMatchObject({
+        code: fault.code,
+        stage: fault.stage,
+      });
+      expect(body).not.toHaveProperty("result");
+      expect(serialized).not.toContain(rawDiagnostic);
+      expect(serialized).not.toMatch(/domainDemand|transitionTrace|solverRunId/);
+    }
+
+    expect(traceAfterVerifier).not.toHaveBeenCalled();
+    expect(demandAfterVerifier).not.toHaveBeenCalled();
+    expect(demandAfterTrace).not.toHaveBeenCalled();
   });
 
   it("hides malformed worker exceptions and returns no partial result", async () => {
