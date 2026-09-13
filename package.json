@@ -32,7 +32,16 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "solve:test": "tsx src/lib/generator/test-generator.ts",
-    "debug:evaluator": "tsx src/debug.ts"
+    "debug:evaluator": "tsx src/debug.ts",
+    "perf:bundle": "tsx scripts/perf/cli.ts bundle",
+    "perf:solver": "tsx scripts/perf/cli.ts solver",
+    "perf:demand": "tsx scripts/perf/cli.ts demand",
+    "perf:service": "tsx scripts/perf/cli.ts service",
+    "perf:queue": "tsx scripts/perf/cli.ts queue",
+    "perf:web-vitals": "tsx scripts/perf/cli.ts web-vitals",
+    "perf:api": "tsx scripts/perf/cli.ts api",
+    "perf:rss": "tsx scripts/perf/cli.ts rss",
+    "perf:all:local": "tsx scripts/perf/cli.ts all-local"
   },
   "dependencies": {
     "cubejs": "1.3.2",

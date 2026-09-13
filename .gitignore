@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+/artifacts/rc-evidence/
 
 # debug
 npm-debug.log*
