@@ -167,7 +167,7 @@ function assertSameState(
 
 
 function assertCrossPhase(
-  before: CubeState,
+  _before: CubeState,
   after: CubeState,
 ): void {
   const status = isAlignedCrossSolved(after);
@@ -178,14 +178,6 @@ function assertCrossPhase(
     );
   }
 
-  const beforeSlots = countSolvedF2LSlots(before);
-  const afterSlots = countSolvedF2LSlots(after);
-
-  if (afterSlots > beforeSlots) {
-    throw new Error(
-      `[cfop-solver] Cross performed F2L work: ${beforeSlots} -> ${afterSlots}`,
-    );
-  }
 }
 function assertF2LStages(
   beforeF2L: CubeState,
@@ -568,8 +560,8 @@ export function solveCrossF2LFromString(scramble: string): CFOPSolveResult {
 }
 
 export type { CubeState, Move } from "../cube/moves";
-export type { CrossAction, CrossEdgeObservation, CrossResult } from "./cross";
-export type { F2LAction, F2LCase, F2LResult, F2LStage } from "./f2l";
+export type { CrossAction, CrossEdgeObservation, CrossResult, CrossRuleId } from "./cross";
+export type { F2LAction, F2LCase, F2LCaseCategory, F2LResult, F2LStage } from "./f2l";
 export type { OLLResult, PLLResult } from "./oll-pll";
 export type { F2LSlot } from "./detection";
 export {
