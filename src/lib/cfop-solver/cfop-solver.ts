@@ -2,8 +2,8 @@
  * cfop-solver.ts — physically validated human-style CFOP orchestrator
  *
  * Pipeline:
- *   optimal aligned Cross
- *   → four genuine F2L stages
+ *   human edge-recognition Cross
+ *   → human pair-recognition F2L stages
  *   → finite-macro 2-look OLL
  *   → finite-macro PLL
  *
@@ -49,6 +49,13 @@ import {
   type PLLResult,
 } from "./oll-pll";
 
+import {
+  CFOP_FACELET_FORMAT,
+  assertValidCubeState,
+  cubeStateFromFacelets,
+  type URFDLBFaceletInput,
+} from "./state-adapter";
+
 export type CFOPPhase = "cross" | "f2l" | "oll" | "pll";
 
 export type PhaseResult = {
@@ -61,6 +68,11 @@ export type PhaseResult = {
 };
 
 export type CFOPSolveResult = {
+  input: {
+    kind: "state" | "scramble";
+    format: typeof CFOP_FACELET_FORMAT;
+    facelets: CubeState;
+  };
   scramble: Move[];
   scrambledState: CubeState;
 
@@ -189,10 +201,10 @@ function assertF2LStages(
   );
   const completed = new Set<F2LSlot>(initiallySolved);
 
-  if (result.stages.length !== initiallyUnsolved.length) {
+  if (result.stages.length > initiallyUnsolved.length) {
     throw new Error(
       `[cfop-solver] F2L stage count mismatch: ` +
-        `expected ${initiallyUnsolved.length}, got ${result.stages.length}`,
+        `at most ${initiallyUnsolved.length}, got ${result.stages.length}`,
     );
   }
 
@@ -203,12 +215,6 @@ function assertF2LStages(
   const uniqueOrder = new Set(result.solvedOrder);
   if (uniqueOrder.size !== result.solvedOrder.length) {
     throw new Error(`[cfop-solver] F2L solvedOrder contains duplicates`);
-  }
-
-  for (const slot of initiallyUnsolved) {
-    if (!uniqueOrder.has(slot)) {
-      throw new Error(`[cfop-solver] F2L did not record unsolved slot ${slot}`);
-    }
   }
 
   const reproducedMoves: Move[] = [];
@@ -262,11 +268,18 @@ function assertF2LStages(
     }
 
     const solvedCountAfter = countSolvedF2LSlots(nextState);
-    if (solvedCountAfter !== solvedCountBefore + 1) {
+    if (solvedCountAfter <= solvedCountBefore) {
       throw new Error(
-        `[cfop-solver] ${stage.slot} did not add exactly one F2L slot: ` +
+        `[cfop-solver] ${stage.slot} did not add an F2L slot: ` +
           `${solvedCountBefore} -> ${solvedCountAfter}`,
       );
+    }
+
+    const newlySolvedSlots = ALL_F2L_SLOTS.filter(
+      (slot) => !completed.has(slot) && isF2LSlotSolved(nextState, slot),
+    );
+    if (newlySolvedSlots.join(" ") !== stage.newlySolvedSlots.join(" ")) {
+      throw new Error(`[cfop-solver] ${stage.slot} newlySolvedSlots mismatch`);
     }
 
     const recordedSlotMoves = result.slotMoves[stage.slot];
@@ -275,7 +288,7 @@ function assertF2LStages(
     }
 
     reproducedMoves.push(...stage.moves);
-    completed.add(stage.slot);
+    for (const slot of newlySolvedSlots) completed.add(slot);
     currentState = nextState;
   }
 
@@ -321,14 +334,13 @@ function assertPLLPhase(before: CubeState, after: CubeState): void {
   }
 }
 
-export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
-  const scrambleMoves = validateMoveArray(scramble, "scramble");
-  const scrambledState = applyMoves(SOLVED_STATE, scrambleMoves);
+export function solveCFOPState(state: CubeState): CFOPSolveResult {
+  assertValidCubeState(state);
 
-  const cross = solveCross(scrambledState);
-  const crossPhase = makePhase("cross", scrambledState, cross.moves);
+  const cross = solveCross(state);
+  const crossPhase = makePhase("cross", state, cross.moves);
   assertSameState(crossPhase.stateAfter, cross.stateAfter, "Cross");
-  assertCrossPhase(scrambledState, crossPhase.stateAfter);
+  assertCrossPhase(state, crossPhase.stateAfter);
 
   const f2l = solveF2L(crossPhase.stateAfter);
   const f2lBasePhase = makePhase("f2l", crossPhase.stateAfter, f2l.moves);
@@ -352,7 +364,7 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
     ...pll.moves,
   ];
 
-  const solvedState = applyMoves(scrambledState, solution);
+  const solvedState = applyMoves(state, solution);
   if (solvedState !== SOLVED_STATE) {
     throw new Error(`[cfop-solver] complete solution did not solve the cube`);
   }
@@ -364,8 +376,13 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
   };
 
   return {
-    scramble: scrambleMoves,
-    scrambledState,
+    input: {
+      kind: "state",
+      format: CFOP_FACELET_FORMAT,
+      facelets: state,
+    },
+    scramble: [],
+    scrambledState: state,
 
     cross,
     f2l,
@@ -387,6 +404,26 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
     stateAfter: solvedState,
     progress: getCFOPProgress(solvedState),
   };
+}
+
+export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
+  const scrambleMoves = validateMoveArray(scramble, "scramble");
+  const state = applyMoves(SOLVED_STATE, scrambleMoves);
+  const result = solveCFOPState(state);
+
+  return {
+    ...result,
+    input: {
+      kind: "scramble",
+      format: CFOP_FACELET_FORMAT,
+      facelets: state,
+    },
+    scramble: scrambleMoves,
+  };
+}
+
+export function solveCFOPFacelets(input: URFDLBFaceletInput): CFOPSolveResult {
+  return solveCFOPState(cubeStateFromFacelets(input));
 }
 
 export function solveCFOPFromString(scramble: string): CFOPSolveResult {
@@ -415,10 +452,13 @@ export function verifySolveResult(result: CFOPSolveResult): boolean {
       return false;
     }
 
-    const expectedScrambledState = applyMoves(SOLVED_STATE, result.scramble);
-    if (expectedScrambledState !== result.scrambledState) {
+    if (result.input.facelets !== result.scrambledState) {
       return false;
     }
+    if (
+      result.input.kind === "scramble" &&
+      applyMoves(SOLVED_STATE, result.scramble) !== result.scrambledState
+    ) return false;
 
     const crossState = applyMoves(
       result.scrambledState,
@@ -465,11 +505,15 @@ export function formatSolveResult(result: CFOPSolveResult): string {
   const lines: string[] = [];
 
   lines.push("── CFOP 解法 ──────────────────────────────");
-  lines.push(`Scramble : ${formatMoves(result.scramble)}`);
+  lines.push(
+    result.input.kind === "scramble"
+      ? `Scramble : ${formatMoves(result.scramble)}`
+      : `Facelets : ${result.input.facelets}`,
+  );
   lines.push("");
   lines.push(
     `Cross : ${formatMoves(result.phases.cross.moves)}  ` +
-      `(${result.phases.cross.htm}手, PDB=${result.cross.pdbDistance})`,
+      `(${result.phases.cross.htm}手, actions=${result.cross.actions.length})`,
   );
   lines.push(
     `F2L   : ${formatMoves(result.phases.f2l.moves)}  ` +
@@ -524,7 +568,14 @@ export function solveCrossF2LFromString(scramble: string): CFOPSolveResult {
 }
 
 export type { CubeState, Move } from "../cube/moves";
-export type { CrossResult } from "./cross";
-export type { F2LResult } from "./f2l";
+export type { CrossAction, CrossEdgeObservation, CrossResult } from "./cross";
+export type { F2LAction, F2LCase, F2LResult, F2LStage } from "./f2l";
 export type { OLLResult, PLLResult } from "./oll-pll";
 export type { F2LSlot } from "./detection";
+export {
+  CFOP_FACELET_FORMAT,
+  InvalidCubeStateError,
+  assertValidCubeState,
+  cubeStateFromFacelets,
+} from "./state-adapter";
+export type { URFDLBFaceletInput } from "./state-adapter";

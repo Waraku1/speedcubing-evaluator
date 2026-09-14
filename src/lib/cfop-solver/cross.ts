@@ -1,18 +1,14 @@
 /**
- * cross.ts — complete optimal D-cross solver
+ * Human-style aligned D-cross recognition.
  *
- * Uses a compact 4-edge pattern database with exactly 190,080 reachable
- * cross states. This is not a full-cube solver and never imports cubejs or
- * complete-solver.ts.
- *
- * At runtime a PDB-guided depth-first search chooses a cross solution that:
- *   - finishes the aligned D cross,
- *   - uses at most 8 moves,
- *   - does not increase the number of solved F2L slots.
+ * The solver inspects each D edge, classifies its layer, sticker direction,
+ * and slot alignment, then selects one finite setup/extraction/insertion
+ * sequence. Completed cross edges are treated as protected pieces. A small
+ * one-action look-ahead chooses which visible edge to solve next.
  */
 
 import {
-  applyMove,
+  applyMoves,
   type CubeState,
   type Move,
 } from "../cube/moves";
@@ -24,285 +20,318 @@ import {
   locateEdge,
 } from "./detection";
 
+import { CROSS_CASE_ALGORITHMS } from "./human-case-tables";
+
+export type CrossEdgeName = "DF" | "DR" | "DB" | "DL";
+export type CrossLayer = "U" | "middle" | "D";
+export type CrossOrientation = "D-on-U/D" | "D-on-side";
+
+export type CrossEdgeObservation = {
+  edge: CrossEdgeName;
+  position: string;
+  layer: CrossLayer;
+  stickerFace: "U" | "R" | "F" | "D" | "L" | "B";
+  orientation: CrossOrientation;
+  correctSlot: boolean;
+  flippedInSlot: boolean;
+  caseId: string;
+};
+
+export type CrossAction = {
+  target: CrossEdgeName | "phase-boundary";
+  caseId: string;
+  action: string;
+  algorithm: Move[];
+  observation: CrossEdgeObservation | null;
+  protectedEdges: CrossEdgeName[];
+  newlySolvedEdges: CrossEdgeName[];
+  stateBefore: CubeState;
+  stateAfter: CubeState;
+};
+
 export type CrossResult = {
   moves: Move[];
   depth: number;
   stateAfter: CubeState;
-  pdbDistance: number;
-  searchedNodes: number;
+  actions: CrossAction[];
+  decisionCount: number;
 };
 
-const CROSS_MOVES: readonly Move[] = [
-  "U", "U'", "U2",
-  "R", "R'", "R2",
-  "F", "F'", "F2",
-  "D", "D'", "D2",
-  "L", "L'", "L2",
-  "B", "B'", "B2",
+const POSITION_NAMES = [
+  "UF", "UR", "UB", "UL",
+  "FR", "FL", "BR", "BL",
+  "DF", "DR", "DB", "DL",
+] as const;
+
+const FACE_NAMES = ["U", "R", "F", "D", "L", "B"] as const;
+
+const CROSS_EDGES: readonly {
+  name: CrossEdgeName;
+  colors: readonly [string, string];
+  goalCode: number;
+}[] = [
+  { name: "DF", colors: ["D", "F"], goalCode: 16 },
+  { name: "DR", colors: ["D", "R"], goalCode: 18 },
+  { name: "DB", colors: ["D", "B"], goalCode: 20 },
+  { name: "DL", colors: ["D", "L"], goalCode: 22 },
 ];
 
-const EDGE_STATE_COUNT = 24;
-const CROSS_KEY_SPACE = EDGE_STATE_COUNT ** 4;
-const REACHABLE_CROSS_STATES = 190_080;
-const CROSS_NODE_LIMIT = 250_000;
+const PHASE_BOUNDARY_ADJUSTMENTS: readonly {
+  id: string;
+  moves: readonly Move[];
+}[] = [
+  { id: "FR-right-trigger", moves: ["R", "U", "R'"] },
+  { id: "FR-right-trigger-reverse", moves: ["R", "U'", "R'"] },
+  { id: "FR-front-trigger", moves: ["F'", "U", "F"] },
+  { id: "FR-front-trigger-reverse", moves: ["F'", "U'", "F"] },
+  { id: "FL-front-trigger", moves: ["F", "U", "F'"] },
+  { id: "FL-front-trigger-reverse", moves: ["F", "U'", "F'"] },
+  { id: "FL-left-trigger", moves: ["L'", "U", "L"] },
+  { id: "FL-left-trigger-reverse", moves: ["L'", "U'", "L"] },
+  { id: "BR-right-trigger", moves: ["R'", "U", "R"] },
+  { id: "BR-right-trigger-reverse", moves: ["R'", "U'", "R"] },
+  { id: "BR-back-trigger", moves: ["B", "U", "B'"] },
+  { id: "BR-back-trigger-reverse", moves: ["B", "U'", "B'"] },
+  { id: "BL-left-trigger", moves: ["L", "U", "L'"] },
+  { id: "BL-left-trigger-reverse", moves: ["L", "U'", "L'"] },
+  { id: "BL-back-trigger", moves: ["B'", "U", "B"] },
+  { id: "BL-back-trigger-reverse", moves: ["B'", "U'", "B"] },
+];
 
-// DF, DR, DB, DL in solved positions and orientations.
-const CROSS_GOAL_CODES = [16, 18, 20, 22] as const;
-
-let edgeTransitions: readonly Uint8Array[] | null = null;
-let crossDistances: Int8Array | null = null;
-
-function faceOf(move: Move): string {
-  return move[0];
+function parseAlgorithm(value: string): Move[] {
+  return value === "" ? [] : value.split(" ") as Move[];
 }
 
-function packCrossCodes(
-  df: number,
-  dr: number,
-  db: number,
-  dl: number,
-): number {
-  return ((df * 24 + dr) * 24 + db) * 24 + dl;
+function solvedEdgeMask(state: CubeState): number {
+  return CROSS_EDGES.reduce((mask, edge, index) => {
+    const solved = locateEdge(state, ...edge.colors).code === edge.goalCode;
+    return solved ? mask | (1 << index) : mask;
+  }, 0);
 }
 
-function unpackCrossKey(key: number): [number, number, number, number] {
-  const dl = key % 24;
-  key = (key - dl) / 24;
-
-  const db = key % 24;
-  key = (key - db) / 24;
-
-  const dr = key % 24;
-  const df = (key - dr) / 24;
-
-  return [df, dr, db, dl];
+function solvedEdges(state: CubeState): CrossEdgeName[] {
+  const mask = solvedEdgeMask(state);
+  return CROSS_EDGES
+    .filter((_, index) => (mask & (1 << index)) !== 0)
+    .map((edge) => edge.name);
 }
 
-const CROSS_GOAL_KEY = packCrossCodes(...CROSS_GOAL_CODES);
-
-function getCrossKey(state: CubeState): number {
-  return packCrossCodes(
-    locateEdge(state, "D", "F").code,
-    locateEdge(state, "D", "R").code,
-    locateEdge(state, "D", "B").code,
-    locateEdge(state, "D", "L").code,
-  );
+function stickerFace(position: number, orientation: 0 | 1): typeof FACE_NAMES[number] {
+  const stickerIndex = EDGE_POSITIONS[position][orientation === 0 ? 0 : 1];
+  return FACE_NAMES[Math.floor(stickerIndex / 9)];
 }
 
-function buildEdgeTransitions(): readonly Uint8Array[] {
-  if (edgeTransitions !== null) return edgeTransitions;
-
-  const tables = CROSS_MOVES.map(() => new Uint8Array(24));
-
-  for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
-    const move = CROSS_MOVES[moveIndex];
-
-    for (let code = 0; code < 24; code++) {
-      const position = Math.floor(code / 2);
-      const orientation = code % 2;
-      const [firstIndex, secondIndex] = EDGE_POSITIONS[position];
-
-      const marker = Array<string>(54).fill(".");
-      marker[firstIndex] = orientation === 0 ? "A" : "B";
-      marker[secondIndex] = orientation === 0 ? "B" : "A";
-
-      const moved = applyMove(marker.join(""), move);
-      let nextCode = -1;
-
-      for (let nextPosition = 0; nextPosition < EDGE_POSITIONS.length; nextPosition++) {
-        const [a, b] = EDGE_POSITIONS[nextPosition];
-
-        if (moved[a] === "A" && moved[b] === "B") {
-          nextCode = nextPosition * 2;
-          break;
-        }
-
-        if (moved[a] === "B" && moved[b] === "A") {
-          nextCode = nextPosition * 2 + 1;
-          break;
-        }
-      }
-
-      if (nextCode < 0) {
-        throw new Error(`[solveCross] failed to build edge transition for ${move}/${code}`);
-      }
-
-      tables[moveIndex][code] = nextCode;
-    }
-  }
-
-  edgeTransitions = tables;
-  return tables;
-}
-
-function moveCrossKey(key: number, moveIndex: number): number {
-  const transitions = buildEdgeTransitions()[moveIndex];
-  const [df, dr, db, dl] = unpackCrossKey(key);
-
-  return packCrossCodes(
-    transitions[df],
-    transitions[dr],
-    transitions[db],
-    transitions[dl],
-  );
-}
-
-function buildCrossDistances(): Int8Array {
-  if (crossDistances !== null) return crossDistances;
-
-  const distances = new Int8Array(CROSS_KEY_SPACE);
-  distances.fill(-1);
-
-  const queue = new Int32Array(REACHABLE_CROSS_STATES);
-  let head = 0;
-  let tail = 0;
-
-  queue[tail++] = CROSS_GOAL_KEY;
-  distances[CROSS_GOAL_KEY] = 0;
-
-  while (head < tail) {
-    const key = queue[head++];
-    const nextDistance = distances[key] + 1;
-
-    for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
-      const nextKey = moveCrossKey(key, moveIndex);
-
-      if (distances[nextKey] !== -1) continue;
-
-      distances[nextKey] = nextDistance;
-      queue[tail++] = nextKey;
-    }
-  }
-
-  if (tail !== REACHABLE_CROSS_STATES) {
-    throw new Error(
-      `[solveCross] cross PDB size mismatch: expected ${REACHABLE_CROSS_STATES}, got ${tail}`,
-    );
-  }
-
-  crossDistances = distances;
-  return distances;
-}
-
-function isPhaseSafeCrossGoal(
-  before: CubeState,
-  candidate: CubeState,
-): boolean {
-  if (!isAlignedCrossSolved(candidate).solved) return false;
-
-  return countSolvedF2LSlots(candidate) <= countSolvedF2LSlots(before);
-}
-
-export function solveCross(
+export function inspectCrossEdge(
   state: CubeState,
-  maxDepth = 8,
-): CrossResult {
+  edgeName: CrossEdgeName,
+): CrossEdgeObservation {
+  const edge = CROSS_EDGES.find((candidate) => candidate.name === edgeName);
+  if (edge === undefined) throw new Error(`[solveCross] unknown cross edge ${edgeName}`);
+
+  const location = locateEdge(state, ...edge.colors);
+  const layer: CrossLayer = location.position < 4
+    ? "U"
+    : location.position < 8
+      ? "middle"
+      : "D";
+  const face = stickerFace(location.position, location.orientation);
+  const orientation: CrossOrientation = face === "U" || face === "D"
+    ? "D-on-U/D"
+    : "D-on-side";
+  const correctSlot = location.code === edge.goalCode;
+  const flippedInSlot = location.position === edge.goalCode / 2 && !correctSlot;
+
+  return {
+    edge: edgeName,
+    position: POSITION_NAMES[location.position],
+    layer,
+    stickerFace: face,
+    orientation,
+    correctSlot,
+    flippedInSlot,
+    caseId: [
+      "cross",
+      edgeName,
+      layer,
+      POSITION_NAMES[location.position],
+      orientation === "D-on-U/D" ? "oriented" : "side-facing",
+      correctSlot ? "aligned" : flippedInSlot ? "flipped-slot" : "wrong-slot",
+    ].join("-"),
+  };
+}
+
+function describeAction(observation: CrossEdgeObservation): string {
+  if (observation.correctSlot) return "Keep the aligned edge.";
+  if (observation.flippedInSlot) {
+    return "Lift the flipped edge out of its D slot, reorient it, and reinsert it.";
+  }
+  if (observation.layer === "middle") {
+    return "Extract the middle-layer edge, align its side color, and insert it on D.";
+  }
+  if (observation.layer === "U") {
+    return observation.orientation === "D-on-U/D"
+      ? "Align the side color over its center and insert with a half turn."
+      : "Turn the edge through a side face so D points down, then align it.";
+  }
+  return "Move the D-layer edge away from the wrong slot, align it, and restore protected edges.";
+}
+
+function newlySolved(before: CubeState, after: CubeState): CrossEdgeName[] {
+  const beforeMask = solvedEdgeMask(before);
+  const afterMask = solvedEdgeMask(after);
+  return CROSS_EDGES
+    .filter((_, index) =>
+      (beforeMask & (1 << index)) === 0 && (afterMask & (1 << index)) !== 0,
+    )
+    .map((edge) => edge.name);
+}
+
+function solvedEdgeCount(mask: number): number {
+  let count = 0;
+  for (let index = 0; index < CROSS_EDGES.length; index++) {
+    if ((mask & (1 << index)) !== 0) count++;
+  }
+  return count;
+}
+
+export function solveCross(state: CubeState): CrossResult {
   if (isAlignedCrossSolved(state).solved) {
     return {
       moves: [],
       depth: 0,
       stateAfter: state,
-      pdbDistance: 0,
-      searchedNodes: 0,
+      actions: [],
+      decisionCount: 0,
     };
   }
 
-  const distances = buildCrossDistances();
-  const startKey = getCrossKey(state);
-  const lowerBound = distances[startKey];
+  const initialF2LCount = countSolvedF2LSlots(state);
+  let currentState = state;
+  const moves: Move[] = [];
+  const actions: CrossAction[] = [];
+  let decisionCount = 0;
 
-  if (lowerBound < 0) {
-    throw new Error(`[solveCross] invalid physical cross state`);
-  }
+  for (let step = 0; step < CROSS_EDGES.length; step++) {
+    const mask = solvedEdgeMask(currentState);
+    if (mask === 0b1111) break;
 
-  if (lowerBound > maxDepth) {
-    throw new Error(
-      `[solveCross] cross requires at least ${lowerBound} moves, above maxDepth=${maxDepth}`,
-    );
-  }
+    let selected: {
+      target: CrossEdgeName;
+      observation: CrossEdgeObservation;
+      algorithm: Move[];
+      stateAfter: CubeState;
+      solvedGain: number;
+    } | null = null;
 
-  let searchedNodes = 0;
-  const path: Move[] = [];
-  let solutionState: CubeState | null = null;
+    for (let targetIndex = 0; targetIndex < CROSS_EDGES.length; targetIndex++) {
+      if ((mask & (1 << targetIndex)) !== 0) continue;
 
-  function dfs(
-    currentState: CubeState,
-    currentKey: number,
-    remaining: number,
-    lastFace: string | null,
-  ): boolean {
-    searchedNodes++;
+      const target = CROSS_EDGES[targetIndex];
+      const location = locateEdge(currentState, ...target.colors);
+      const encoded = CROSS_CASE_ALGORITHMS[`${mask}:${targetIndex}:${location.code}`];
+      if (encoded === undefined) continue;
 
-    if (searchedNodes > CROSS_NODE_LIMIT) {
-      throw new Error(
-        `[solveCross] node limit exceeded: ${CROSS_NODE_LIMIT}`,
-      );
-    }
+      decisionCount++;
+      const algorithm = parseAlgorithm(encoded);
+      const stateAfter = applyMoves(currentState, algorithm);
+      const afterMask = solvedEdgeMask(stateAfter);
 
-    const minimumRemaining = distances[currentKey];
-    if (minimumRemaining < 0 || minimumRemaining > remaining) return false;
-
-    if (remaining === 0) {
-      if (currentKey !== CROSS_GOAL_KEY) return false;
-      if (!isPhaseSafeCrossGoal(state, currentState)) return false;
-
-      solutionState = currentState;
-      return true;
-    }
-
-    for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
-      const move = CROSS_MOVES[moveIndex];
-      const face = faceOf(move);
-
-      if (face === lastFace) continue;
-
-      const nextKey = moveCrossKey(currentKey, moveIndex);
-      if (distances[nextKey] > remaining - 1) continue;
-
-      const nextState = applyMove(currentState, move);
-      path.push(move);
-
-      if (dfs(nextState, nextKey, remaining - 1, face)) return true;
-
-      path.pop();
-    }
-
-    return false;
-  }
-
-  for (let depth = lowerBound; depth <= maxDepth; depth++) {
-    path.length = 0;
-
-    if (dfs(state, startKey, depth, null)) {
-      if (solutionState === null) {
-        throw new Error(`[solveCross] internal solution-state error`);
+      if ((afterMask & mask) !== mask || (afterMask & (1 << targetIndex)) === 0) {
+        throw new Error(`[solveCross] invalid finite case ${mask}:${targetIndex}:${location.code}`);
       }
 
-      return {
-        moves: [...path],
-        depth: path.length,
-        stateAfter: solutionState,
-        pdbDistance: lowerBound,
-        searchedNodes,
+      const candidate = {
+        target: target.name,
+        observation: inspectCrossEdge(currentState, target.name),
+        algorithm,
+        stateAfter,
+        solvedGain: solvedEdgeCount(afterMask) - solvedEdgeCount(mask),
       };
+
+      if (
+        selected === null ||
+        candidate.algorithm.length < selected.algorithm.length ||
+        (
+          candidate.algorithm.length === selected.algorithm.length &&
+          candidate.solvedGain > selected.solvedGain
+        )
+      ) {
+        selected = candidate;
+      }
     }
+
+    if (selected === null) {
+      throw new Error(`[solveCross] no recognized edge action for mask ${mask}`);
+    }
+
+    const before = currentState;
+    const protectedEdges = solvedEdges(before);
+    currentState = selected.stateAfter;
+    moves.push(...selected.algorithm);
+    actions.push({
+      target: selected.target,
+      caseId: selected.observation.caseId,
+      action: describeAction(selected.observation),
+      algorithm: [...selected.algorithm],
+      observation: selected.observation,
+      protectedEdges,
+      newlySolvedEdges: newlySolved(before, currentState),
+      stateBefore: before,
+      stateAfter: currentState,
+    });
   }
 
-  throw new Error(
-    `[solveCross] no phase-safe aligned cross found within ${maxDepth} moves; ` +
-      `pdbDistance=${lowerBound}, searchedNodes=${searchedNodes}`,
-  );
-}
-
-export function getCrossPatternDatabaseSize(): number {
-  const distances = buildCrossDistances();
-  let count = 0;
-
-  for (const distance of distances) {
-    if (distance >= 0) count++;
+  if (!isAlignedCrossSolved(currentState).solved) {
+    throw new Error(`[solveCross] finite edge actions did not complete the aligned D cross`);
   }
 
-  return count;
+  // A Cross phase should not claim accidental F2L progress. If an insertion
+  // happens to finish a pair, use one visible trigger to return that pair to U
+  // while leaving the aligned D cross intact.
+  while (countSolvedF2LSlots(currentState) > initialF2LCount) {
+    const before = currentState;
+    let selected: { id: string; moves: readonly Move[]; stateAfter: CubeState; count: number } | null = null;
+
+    for (const adjustment of PHASE_BOUNDARY_ADJUSTMENTS) {
+      decisionCount++;
+      const stateAfter = applyMoves(currentState, adjustment.moves);
+      if (!isAlignedCrossSolved(stateAfter).solved) continue;
+      const count = countSolvedF2LSlots(stateAfter);
+      if (selected === null || count < selected.count) {
+        selected = { ...adjustment, stateAfter, count };
+      }
+    }
+
+    if (selected === null || selected.count >= countSolvedF2LSlots(currentState)) {
+      throw new Error(`[solveCross] could not preserve the Cross/F2L phase boundary`);
+    }
+
+    currentState = selected.stateAfter;
+    moves.push(...selected.moves);
+    actions.push({
+      target: "phase-boundary",
+      caseId: `cross-boundary-${selected.id}`,
+      action: "Move an accidentally completed pair back to U for an explicit F2L stage.",
+      algorithm: [...selected.moves],
+      observation: null,
+      protectedEdges: solvedEdges(before),
+      newlySolvedEdges: [],
+      stateBefore: before,
+      stateAfter: currentState,
+    });
+  }
+
+  return {
+    moves,
+    depth: moves.length,
+    stateAfter: currentState,
+    actions,
+    decisionCount,
+  };
 }
 
-export const registeredCrossMoves = CROSS_MOVES;
+export function getCrossCaseTableSize(): number {
+  return Object.keys(CROSS_CASE_ALGORITHMS).length;
+}
+
+export const registeredCrossCases = CROSS_CASE_ALGORITHMS;

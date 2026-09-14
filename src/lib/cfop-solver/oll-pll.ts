@@ -34,6 +34,7 @@ import {
 
 export type OLLResult = {
   moves: Move[];
+  algorithm: Move[];
   depth: number;
   stateAfter: CubeState;
   caseId: string;
@@ -42,6 +43,7 @@ export type OLLResult = {
 
 export type PLLResult = {
   moves: Move[];
+  algorithm: Move[];
   depth: number;
   stateAfter: CubeState;
   caseId: string;
@@ -612,6 +614,7 @@ export function solveOLL(state: CubeState): OLLResult {
   if (isOLLSolved(state)) {
     return {
       moves: [],
+      algorithm: [],
       depth: 0,
       stateAfter: state,
       caseId: "oll-skip",
@@ -645,6 +648,7 @@ export function solveOLL(state: CubeState): OLLResult {
 
   return {
     moves: [...selected.moves],
+    algorithm: [...selected.moves],
     depth: selected.moves.length,
     stateAfter,
     caseId: selected.caseId,
@@ -664,6 +668,7 @@ export function solvePLL(state: CubeState): PLLResult {
   if (isPLLSolved(state)) {
     return {
       moves: [],
+      algorithm: [],
       depth: 0,
       stateAfter: state,
       caseId: "pll-skip",
@@ -695,6 +700,7 @@ export function solvePLL(state: CubeState): PLLResult {
 
   return {
     moves: [...selected.moves],
+    algorithm: [...selected.moves],
     depth: selected.moves.length,
     stateAfter,
     caseId: selected.caseId,

@@ -6,8 +6,10 @@ import {
 } from "../cube/moves";
 
 import {
-  getCrossPatternDatabaseSize,
+  getCrossCaseTableSize,
 } from "./cross";
+
+import { getTopF2LCaseTableSize } from "./f2l";
 
 import {
   getOLLLookupSize,
@@ -22,8 +24,12 @@ import {
 } from "./detection";
 
 describe("CFOP finite phase coverage", () => {
-  it("contains every reachable four-edge Cross state", () => {
-    expect(getCrossPatternDatabaseSize()).toBe(190_080);
+  it("contains finite protected-edge Cross actions", () => {
+    expect(getCrossCaseTableSize()).toBe(672);
+  });
+
+  it("contains the 24 normalized top-pair cases for each slot and AUF", () => {
+    expect(getTopF2LCaseTableSize()).toBe(4 * 24 * 4);
   });
 
   it("contains all 216 OLL orientations", () => {
