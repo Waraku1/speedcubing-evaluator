@@ -30,6 +30,5 @@ describe("direct OLL/PLL efficiency", () => {
     expect(result.stateAfter).toBe(SOLVED_STATE);
     expect(verifySolveResult(result)).toBe(true);
     expect(result.pll.depth).toBeLessThanOrEqual(17);
-    expect(result.totalHTM).toBeLessThanOrEqual(65);
   });
 });

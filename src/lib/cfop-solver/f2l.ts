@@ -1,18 +1,19 @@
 /**
- * f2l.ts — complete macro-based human F2L solver
+ * Human F2L case recognition.
  *
- * Instead of raw-move BFS, this solver searches only over standard human F2L
- * macros:
- *   - U / U' / U2 setups
- *   - four safe triggers for each currently unsolved slot
+ * Each pair is solved independently:
+ *   1. locate its corner and edge,
+ *   2. extract a trapped piece with the trigger for its visible slot,
+ *   3. classify the two U-layer pieces by orientation and relative position,
+ *   4. apply the finite algorithm registered for that case.
  *
- * Each trigger preserves the aligned D cross and every other F2L slot. The
- * search abstraction tracks only the target pair and the four-slot solved
- * mask, so the state space is at most 576 × 16 states per target slot.
+ * Every available trigger preserves the aligned D cross. Triggers belonging
+ * to completed slots are excluded, so earlier pairs stay solved.
  */
 
 import {
   applyMoves,
+  cancelMoves,
   type CubeState,
   type Move,
 } from "../cube/moves";
@@ -21,29 +22,56 @@ import {
   ALL_F2L_SLOTS,
   countSolvedF2LSlots,
   getF2LPairKey,
-  getF2LSolvedMask,
-  getF2LSlotStatus,
   getUnsolvedF2LSlots,
   isAlignedCrossSolved,
   isF2LSolved,
   isF2LSlotSolved,
+  locateCorner,
+  locateEdge,
+  type CornerLocation,
+  type EdgeLocation,
   type F2LSlot,
 } from "./detection";
 
-export type F2LMacro = {
+import { TOP_F2L_CASE_ALGORITHMS } from "./human-case-tables";
+
+export type F2LCaseCategory =
+  | "solved"
+  | "top-layer-pair"
+  | "corner-in-slot"
+  | "edge-in-slot"
+  | "both-in-slots";
+
+export type F2LCase = {
   id: string;
-  slot: F2LSlot | null;
-  moves: Move[];
-  description: string;
+  slot: F2LSlot;
+  category: F2LCaseCategory;
+  corner: CornerLocation & { positionName: string };
+  edge: EdgeLocation & { positionName: string };
+  relativePosition: number | null;
+  algorithm: Move[];
+};
+
+export type F2LAction = {
+  type: "extract-corner" | "extract-edge" | "pair-and-insert";
+  caseId: string;
+  sourceSlot: F2LSlot | null;
+  algorithm: Move[];
+  stateBefore: CubeState;
+  stateAfter: CubeState;
 };
 
 export type F2LStage = {
   slot: F2LSlot;
+  caseId: string;
+  algorithm: Move[];
   moves: Move[];
   macroIds: string[];
+  actions: F2LAction[];
+  newlySolvedSlots: F2LSlot[];
   stateBefore: CubeState;
   stateAfter: CubeState;
-  searchedNodes: number;
+  decisionCount: number;
 };
 
 export type F2LResult = {
@@ -53,238 +81,291 @@ export type F2LResult = {
   slotMoves: Record<F2LSlot, Move[]>;
   solvedOrder: F2LSlot[];
   stages: F2LStage[];
-  searchedNodes: number;
+  decisionCount: number;
 };
 
-type SearchNode = {
-  state: CubeState;
-  moves: Move[];
-  macroIds: string[];
-  macroDepth: number;
-  lastMacroId: string | null;
-};
-
-type SlotCandidate = {
+type SlotPlan = {
   slot: F2LSlot;
+  caseId: string;
   moves: Move[];
-  macroIds: string[];
+  actions: F2LAction[];
   stateAfter: CubeState;
-  searchedNodes: number;
+  newlySolvedSlots: F2LSlot[];
+  decisionCount: number;
 };
 
-const MAX_MACRO_DEPTH = 8;
-const SLOT_NODE_LIMIT = 12_000;
+type Trigger = {
+  id: string;
+  slot: F2LSlot;
+  moves: readonly Move[];
+};
+
+const CORNER_POSITION_NAMES = [
+  "UFR", "UFL", "UBR", "UBL", "DFR", "DFL", "DBR", "DBL",
+] as const;
+
+const EDGE_POSITION_NAMES = [
+  "UF", "UR", "UB", "UL", "FR", "FL", "BR", "BL", "DF", "DR", "DB", "DL",
+] as const;
+
+const SLOT_DATA: Readonly<Record<F2LSlot, {
+  corner: readonly [string, string, string];
+  edge: readonly [string, string];
+}>> = {
+  FR: { corner: ["D", "F", "R"], edge: ["F", "R"] },
+  FL: { corner: ["D", "F", "L"], edge: ["F", "L"] },
+  BR: { corner: ["D", "B", "R"], edge: ["B", "R"] },
+  BL: { corner: ["D", "B", "L"], edge: ["B", "L"] },
+};
+
+const SLOT_FOR_LOWER_POSITION: Readonly<Record<number, F2LSlot>> = {
+  4: "FR",
+  5: "FL",
+  6: "BR",
+  7: "BL",
+};
+
+const SLOT_TRIGGERS: Readonly<Record<F2LSlot, readonly Trigger[]>> = {
+  FR: [
+    { id: "FR-right-trigger", slot: "FR", moves: ["R", "U", "R'"] },
+    { id: "FR-right-trigger-reverse", slot: "FR", moves: ["R", "U'", "R'"] },
+    { id: "FR-front-trigger", slot: "FR", moves: ["F'", "U", "F"] },
+    { id: "FR-front-trigger-reverse", slot: "FR", moves: ["F'", "U'", "F"] },
+  ],
+  FL: [
+    { id: "FL-front-trigger", slot: "FL", moves: ["F", "U", "F'"] },
+    { id: "FL-front-trigger-reverse", slot: "FL", moves: ["F", "U'", "F'"] },
+    { id: "FL-left-trigger", slot: "FL", moves: ["L'", "U", "L"] },
+    { id: "FL-left-trigger-reverse", slot: "FL", moves: ["L'", "U'", "L"] },
+  ],
+  BR: [
+    { id: "BR-right-trigger", slot: "BR", moves: ["R'", "U", "R"] },
+    { id: "BR-right-trigger-reverse", slot: "BR", moves: ["R'", "U'", "R"] },
+    { id: "BR-back-trigger", slot: "BR", moves: ["B", "U", "B'"] },
+    { id: "BR-back-trigger-reverse", slot: "BR", moves: ["B", "U'", "B'"] },
+  ],
+  BL: [
+    { id: "BL-left-trigger", slot: "BL", moves: ["L", "U", "L'"] },
+    { id: "BL-left-trigger-reverse", slot: "BL", moves: ["L", "U'", "L'"] },
+    { id: "BL-back-trigger", slot: "BL", moves: ["B'", "U", "B"] },
+    { id: "BL-back-trigger-reverse", slot: "BL", moves: ["B'", "U'", "B"] },
+  ],
+};
 
 function parseAlgorithm(value: string): Move[] {
-  return value.trim().split(/\s+/) as Move[];
+  return value === "" ? [] : value.split(" ") as Move[];
 }
 
-const U_MACROS: readonly F2LMacro[] = [
-  {
-    id: "setup-U",
-    slot: null,
-    moves: ["U"],
-    description: "Rotate the U layer clockwise.",
-  },
-  {
-    id: "setup-U-prime",
-    slot: null,
-    moves: ["U'"],
-    description: "Rotate the U layer counter-clockwise.",
-  },
-  {
-    id: "setup-U2",
-    slot: null,
-    moves: ["U2"],
-    description: "Rotate the U layer by 180 degrees.",
-  },
-];
-
-const SLOT_MACROS: Readonly<Record<F2LSlot, readonly F2LMacro[]>> = {
-  FR: [
-    ["FR-R-U-Rp", "R U R'"],
-    ["FR-R-Up-Rp", "R U' R'"],
-    ["FR-Fp-U-F", "F' U F"],
-    ["FR-Fp-Up-F", "F' U' F"],
-  ].map(([id, algorithm]) => ({
-    id,
-    slot: "FR" as const,
-    moves: parseAlgorithm(algorithm),
-    description: "Safe FR extraction, pairing, or insertion trigger.",
-  })),
-
-  FL: [
-    ["FL-F-U-Fp", "F U F'"],
-    ["FL-F-Up-Fp", "F U' F'"],
-    ["FL-Lp-U-L", "L' U L"],
-    ["FL-Lp-Up-L", "L' U' L"],
-  ].map(([id, algorithm]) => ({
-    id,
-    slot: "FL" as const,
-    moves: parseAlgorithm(algorithm),
-    description: "Safe FL extraction, pairing, or insertion trigger.",
-  })),
-
-  BR: [
-    ["BR-Rp-U-R", "R' U R"],
-    ["BR-Rp-Up-R", "R' U' R"],
-    ["BR-B-U-Bp", "B U B'"],
-    ["BR-B-Up-Bp", "B U' B'"],
-  ].map(([id, algorithm]) => ({
-    id,
-    slot: "BR" as const,
-    moves: parseAlgorithm(algorithm),
-    description: "Safe BR extraction, pairing, or insertion trigger.",
-  })),
-
-  BL: [
-    ["BL-L-U-Lp", "L U L'"],
-    ["BL-L-Up-Lp", "L U' L'"],
-    ["BL-Bp-U-B", "B' U B"],
-    ["BL-Bp-Up-B", "B' U' B"],
-  ].map(([id, algorithm]) => ({
-    id,
-    slot: "BL" as const,
-    moves: parseAlgorithm(algorithm),
-    description: "Safe BL extraction, pairing, or insertion trigger.",
-  })),
-};
-
 function cloneSlotMoves(): Record<F2LSlot, Move[]> {
+  return { FR: [], FL: [], BR: [], BL: [] };
+}
+
+function allSlotsRemainSolved(state: CubeState, slots: readonly F2LSlot[]): boolean {
+  return slots.every((slot) => isF2LSlotSolved(state, slot));
+}
+
+function locatePair(state: CubeState, slot: F2LSlot): {
+  corner: CornerLocation;
+  edge: EdgeLocation;
+} {
+  const pieces = SLOT_DATA[slot];
   return {
-    FR: [],
-    FL: [],
-    BR: [],
-    BL: [],
+    corner: locateCorner(state, pieces.corner),
+    edge: locateEdge(state, ...pieces.edge),
   };
 }
 
-function appendMoves(target: Move[], source: readonly Move[]): void {
-  for (const move of source) target.push(move);
+export function recognizeF2LCase(state: CubeState, slot: F2LSlot): F2LCase {
+  const { corner, edge } = locatePair(state, slot);
+  const bothOnTop = corner.position < 4 && edge.position < 4;
+  const cornerBelow = corner.position >= 4;
+  const edgeBelow = edge.position >= 4;
+  const relativePosition = bothOnTop
+    ? (edge.position - corner.position + 4) % 4
+    : null;
+
+  let category: F2LCaseCategory;
+  if (isF2LSlotSolved(state, slot)) category = "solved";
+  else if (bothOnTop) category = "top-layer-pair";
+  else if (cornerBelow && edgeBelow) category = "both-in-slots";
+  else if (cornerBelow) category = "corner-in-slot";
+  else category = "edge-in-slot";
+
+  const id = category === "top-layer-pair"
+    ? `F2L-top-C${corner.orientation}-E${edge.orientation}-R${relativePosition}`
+    : category === "solved"
+      ? `F2L-${slot}-solved`
+      : `F2L-${category}-C${CORNER_POSITION_NAMES[corner.position]}-E${EDGE_POSITION_NAMES[edge.position]}`;
+
+  const encoded = bothOnTop
+    ? TOP_F2L_CASE_ALGORITHMS[`${slot}:${getF2LPairKey(state, slot)}`]
+    : undefined;
+
+  return {
+    id,
+    slot,
+    category,
+    corner: { ...corner, positionName: CORNER_POSITION_NAMES[corner.position] },
+    edge: { ...edge, positionName: EDGE_POSITION_NAMES[edge.position] },
+    relativePosition,
+    algorithm: encoded === undefined ? [] : cancelMoves(parseAlgorithm(encoded)),
+  };
 }
 
-function allProtectedSlotsRemainSolved(
-  state: CubeState,
-  protectedSlots: readonly F2LSlot[],
-): boolean {
-  return protectedSlots.every((slot) => isF2LSlotSolved(state, slot));
-}
-
-function searchKey(state: CubeState, target: F2LSlot): number {
-  return getF2LPairKey(state, target) * 16 + getF2LSolvedMask(state);
-}
-
-function getActiveMacros(state: CubeState): F2LMacro[] {
-  const active = [...U_MACROS];
-
-  for (const slot of getUnsolvedF2LSlots(state)) {
-    active.push(...SLOT_MACROS[slot]);
-  }
-
-  return active;
-}
-
-function isRepeatedUSetup(previous: string | null, current: F2LMacro): boolean {
-  return previous?.startsWith("setup-U") === true && current.slot === null;
-}
-
-function findSlotCandidate(
+function chooseExtraction(
   state: CubeState,
   target: F2LSlot,
-): SlotCandidate | null {
-  const solvedBefore = countSolvedF2LSlots(state);
-  const protectedSlots = ALL_F2L_SLOTS.filter((slot) => isF2LSlotSolved(state, slot));
-  const macros = getActiveMacros(state);
+  protectedSlots: readonly F2LSlot[],
+  extract: "corner" | "edge",
+  sourceSlot: F2LSlot,
+): { trigger: Trigger; stateAfter: CubeState; decisionCount: number } {
+  let selected: { trigger: Trigger; stateAfter: CubeState; score: number } | null = null;
+  let decisionCount = 0;
 
-  const queue: SearchNode[] = [{
-    state,
-    moves: [],
-    macroIds: [],
-    macroDepth: 0,
-    lastMacroId: null,
-  }];
+  for (const trigger of SLOT_TRIGGERS[sourceSlot]) {
+    decisionCount++;
+    const stateAfter = applyMoves(state, trigger.moves);
+    const pair = locatePair(stateAfter, target);
+    const extracted = extract === "corner"
+      ? pair.corner.position < 4
+      : pair.edge.position < 4;
 
-  const visited = new Set<number>([searchKey(state, target)]);
+    if (!extracted) continue;
+    if (!isAlignedCrossSolved(stateAfter).solved) continue;
+    if (!allSlotsRemainSolved(stateAfter, protectedSlots)) continue;
 
-  for (let cursor = 0; cursor < queue.length; cursor++) {
-    if (cursor >= SLOT_NODE_LIMIT) {
-      throw new Error(
-        `[solveF2L] ${target} node limit exceeded: ${SLOT_NODE_LIMIT}`,
-      );
-    }
+    const score =
+      (isF2LSlotSolved(stateAfter, target) ? -100 : 0) +
+      (pair.corner.position < 4 ? -10 : 0) +
+      (pair.edge.position < 4 ? -10 : 0);
 
-    const node = queue[cursor];
-    if (node.macroDepth >= MAX_MACRO_DEPTH) continue;
-
-    for (const macro of macros) {
-      if (isRepeatedUSetup(node.lastMacroId, macro)) continue;
-
-      const nextState = applyMoves(node.state, macro.moves);
-
-      if (!isAlignedCrossSolved(nextState).solved) continue;
-      if (!allProtectedSlotsRemainSolved(nextState, protectedSlots)) continue;
-
-      const nextMoves = [...node.moves, ...macro.moves];
-      const nextMacroIds = [...node.macroIds, macro.id];
-      const solvedAfter = countSolvedF2LSlots(nextState);
-
-      if (
-        isF2LSlotSolved(nextState, target) &&
-        solvedAfter === solvedBefore + 1
-      ) {
-        return {
-          slot: target,
-          moves: nextMoves,
-          macroIds: nextMacroIds,
-          stateAfter: nextState,
-          searchedNodes: cursor + 1,
-        };
-      }
-
-      const key = searchKey(nextState, target);
-      if (visited.has(key)) continue;
-
-      visited.add(key);
-      queue.push({
-        state: nextState,
-        moves: nextMoves,
-        macroIds: nextMacroIds,
-        macroDepth: node.macroDepth + 1,
-        lastMacroId: macro.id,
-      });
+    if (selected === null || score < selected.score) {
+      selected = { trigger, stateAfter, score };
     }
   }
 
-  return null;
+  if (selected === null) {
+    throw new Error(`[solveF2L] no ${extract} extraction case for ${target} from ${sourceSlot}`);
+  }
+
+  return { ...selected, decisionCount };
 }
 
-function chooseBestCandidate(state: CubeState): SlotCandidate {
-  const unsolvedSlots = getUnsolvedF2LSlots(state);
-  let best: SlotCandidate | null = null;
+function planSlot(state: CubeState, slot: F2LSlot): SlotPlan {
+  const protectedSlots = ALL_F2L_SLOTS.filter((candidate) => isF2LSlotSolved(state, candidate));
+  const moves: Move[] = [];
+  const actions: F2LAction[] = [];
+  let currentState = state;
+  let decisionCount = 0;
 
-  for (const slot of unsolvedSlots) {
-    const candidate = findSlotCandidate(state, slot);
-    if (candidate === null) continue;
+  for (let actionIndex = 0; actionIndex < 8 && !isF2LSlotSolved(currentState, slot); actionIndex++) {
+    const recognized = recognizeF2LCase(currentState, slot);
+
+    if (recognized.category === "top-layer-pair") {
+      decisionCount++;
+      if (recognized.algorithm.length === 0) {
+        throw new Error(`[solveF2L] missing finite top-pair case ${slot}/${recognized.id}`);
+      }
+
+      const stateAfter = applyMoves(currentState, recognized.algorithm);
+      if (
+        !isF2LSlotSolved(stateAfter, slot) ||
+        !isAlignedCrossSolved(stateAfter).solved ||
+        !allSlotsRemainSolved(stateAfter, protectedSlots)
+      ) {
+        throw new Error(`[solveF2L] invalid top-pair algorithm ${slot}/${recognized.id}`);
+      }
+
+      actions.push({
+        type: "pair-and-insert",
+        caseId: recognized.id,
+        sourceSlot: null,
+        algorithm: [...recognized.algorithm],
+        stateBefore: currentState,
+        stateAfter,
+      });
+      moves.push(...recognized.algorithm);
+      currentState = stateAfter;
+      continue;
+    }
+
+    const pair = locatePair(currentState, slot);
+    const extract = pair.corner.position >= 4 ? "corner" : "edge";
+    const sourcePosition = extract === "corner" ? pair.corner.position : pair.edge.position;
+    const sourceSlot = SLOT_FOR_LOWER_POSITION[sourcePosition];
+
+    if (sourceSlot === undefined || protectedSlots.includes(sourceSlot)) {
+      throw new Error(`[solveF2L] ${slot} ${extract} is trapped in protected position ${sourcePosition}`);
+    }
+
+    const extraction = chooseExtraction(
+      currentState,
+      slot,
+      protectedSlots,
+      extract,
+      sourceSlot,
+    );
+    decisionCount += extraction.decisionCount;
+    const caseId = `F2L-extract-${extract}-${sourceSlot}-${
+      extract === "corner" ? pair.corner.orientation : pair.edge.orientation
+    }-${extraction.trigger.id}`;
+
+    actions.push({
+      type: extract === "corner" ? "extract-corner" : "extract-edge",
+      caseId,
+      sourceSlot,
+      algorithm: [...extraction.trigger.moves],
+      stateBefore: currentState,
+      stateAfter: extraction.stateAfter,
+    });
+    moves.push(...extraction.trigger.moves);
+    currentState = extraction.stateAfter;
+  }
+
+  if (!isF2LSlotSolved(currentState, slot)) {
+    throw new Error(`[solveF2L] finite case actions did not solve ${slot}`);
+  }
+
+  const newlySolvedSlots = ALL_F2L_SLOTS.filter(
+    (candidate) => !isF2LSlotSolved(state, candidate) && isF2LSlotSolved(currentState, candidate),
+  );
+
+  return {
+    slot,
+    caseId: actions.at(-1)?.caseId ?? `F2L-${slot}-skip`,
+    moves,
+    actions,
+    stateAfter: currentState,
+    newlySolvedSlots,
+    decisionCount,
+  };
+}
+
+function choosePair(state: CubeState): SlotPlan {
+  const beforeCount = countSolvedF2LSlots(state);
+  let selected: SlotPlan | null = null;
+
+  for (const slot of getUnsolvedF2LSlots(state)) {
+    const plan = planSlot(state, slot);
+    const added = countSolvedF2LSlots(plan.stateAfter) - beforeCount;
+    const selectedAdded = selected === null
+      ? Number.POSITIVE_INFINITY
+      : countSolvedF2LSlots(selected.stateAfter) - beforeCount;
 
     if (
-      best === null ||
-      candidate.moves.length < best.moves.length ||
-      (
-        candidate.moves.length === best.moves.length &&
-        candidate.macroIds.length < best.macroIds.length
-      )
+      selected === null ||
+      (added === 1 && selectedAdded !== 1) ||
+      (added === selectedAdded && plan.moves.length < selected.moves.length)
     ) {
-      best = candidate;
+      selected = plan;
     }
   }
 
-  if (best !== null) return best;
+  if (selected === null) {
+    throw new Error(`[solveF2L] no visible pair can be selected`);
+  }
 
-  const details = unsolvedSlots
-    .map((slot) => `${slot}:${JSON.stringify(getF2LSlotStatus(state, slot).wrongStickers)}`)
-    .join(" | ");
-
-  throw new Error(`[solveF2L] no human-macro solution found: ${details}`);
+  return selected;
 }
 
 export function solveF2L(state: CubeState): F2LResult {
@@ -292,42 +373,45 @@ export function solveF2L(state: CubeState): F2LResult {
     throw new Error(`[solveF2L] aligned cross must be solved before F2L`);
   }
 
+  const slotMoves = cloneSlotMoves();
   if (isF2LSolved(state).solved) {
     return {
       moves: [],
       depth: 0,
       stateAfter: state,
-      slotMoves: cloneSlotMoves(),
+      slotMoves,
       solvedOrder: [],
       stages: [],
-      searchedNodes: 0,
+      decisionCount: 0,
     };
   }
 
   let currentState = state;
-  const allMoves: Move[] = [];
-  const slotMoves = cloneSlotMoves();
+  const moves: Move[] = [];
   const solvedOrder: F2LSlot[] = [];
   const stages: F2LStage[] = [];
-  let searchedNodes = 0;
+  let decisionCount = 0;
 
   while (!isF2LSolved(currentState).solved) {
-    const candidate = chooseBestCandidate(currentState);
     const before = currentState;
-
-    appendMoves(allMoves, candidate.moves);
-    appendMoves(slotMoves[candidate.slot], candidate.moves);
-    solvedOrder.push(candidate.slot);
-    searchedNodes += candidate.searchedNodes;
-    currentState = candidate.stateAfter;
+    const plan = choosePair(currentState);
+    decisionCount += plan.decisionCount;
+    currentState = plan.stateAfter;
+    moves.push(...plan.moves);
+    slotMoves[plan.slot].push(...plan.moves);
+    solvedOrder.push(plan.slot);
 
     stages.push({
-      slot: candidate.slot,
-      moves: [...candidate.moves],
-      macroIds: [...candidate.macroIds],
+      slot: plan.slot,
+      caseId: plan.caseId,
+      algorithm: [...plan.moves],
+      moves: [...plan.moves],
+      macroIds: plan.actions.map((action) => action.caseId),
+      actions: plan.actions,
+      newlySolvedSlots: plan.newlySolvedSlots,
       stateBefore: before,
       stateAfter: currentState,
-      searchedNodes: candidate.searchedNodes,
+      decisionCount: plan.decisionCount,
     });
   }
 
@@ -336,17 +420,22 @@ export function solveF2L(state: CubeState): F2LResult {
   }
 
   return {
-    moves: allMoves,
-    depth: allMoves.length,
+    moves,
+    depth: moves.length,
     stateAfter: currentState,
     slotMoves,
     solvedOrder,
     stages,
-    searchedNodes,
+    decisionCount,
   };
 }
 
+export function getTopF2LCaseTableSize(): number {
+  return Object.keys(TOP_F2L_CASE_ALGORITHMS).length;
+}
+
+export const registeredF2LCases = TOP_F2L_CASE_ALGORITHMS;
 export const registeredF2LMacros = {
-  U: U_MACROS,
-  slots: SLOT_MACROS,
+  cases: TOP_F2L_CASE_ALGORITHMS,
+  slotTriggers: SLOT_TRIGGERS,
 };

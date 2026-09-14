@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyMoves,
   SOLVED_STATE,
   type Move,
 } from "../cube/moves";
 
 import {
-  solveCFOP,
+  solveCFOPState,
   verifySolveResult,
 } from "./cfop-solver";
 
@@ -41,13 +42,13 @@ function generateScramble(random: () => number, length: number): Move[] {
   return result;
 }
 
-describe("solveCFOP — deterministic random stress", () => {
-  it("solves 50 deterministic 20-move scrambles", () => {
+describe("solveCFOPState — deterministic random state stress", () => {
+  it("solves 50 states produced by deterministic 20-move scrambles", () => {
     const random = makeRandom(0x5eedc0de);
 
     for (let index = 0; index < 50; index++) {
       const scramble = generateScramble(random, 20);
-      const result = solveCFOP(scramble);
+      const result = solveCFOPState(applyMoves(SOLVED_STATE, scramble));
 
       expect(result.stateAfter, `scramble ${index}: ${scramble.join(" ")}`).toBe(
         SOLVED_STATE,
