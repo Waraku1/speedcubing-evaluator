@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CubeNetEditor } from "../cube/CubeNetEditor";
 import {
@@ -30,11 +30,18 @@ export function ScanReview({
   const [selectedToken, setSelectedToken] = useState<CubeDraftTokenV1>("N");
   const [activeStickerIndex, setActiveStickerIndex] = useState(0);
   const validation = validateCubeDraftV1(draft);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   return (
     <section aria-labelledby="review-heading" className={styles.reviewPanel}>
       <p className={styles.stepLabel}>Required review</p>
-      <h2 id="review-heading">Review and correct all six faces</h2>
+      <h2 id="review-heading" ref={headingRef} tabIndex={-1}>
+        Review and correct all six faces
+      </h2>
       <p className={styles.reviewIntro}>
         Camera colors are heuristic suggestions, not facts. Check the canonical
         outside-view net below. Use <strong>?</strong> for any sticker you cannot
@@ -67,6 +74,9 @@ export function ScanReview({
           {storageError}
         </p>
       )}
+      <p aria-live="polite" className="sr-only" role="status">
+        {busy ? "Reviewed draft handoff started." : ""}
+      </p>
       <div className={styles.actions}>
         <button
           className={styles.primaryButton}

@@ -66,6 +66,7 @@ export function ScannerController() {
   >(null);
   const nextPoseRef = useRef<ScanPoseNumberV1>(1);
   const handoffInFlightRef = useRef(false);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
   const [state, setState] = useState<ScannerStateV1>("IDLE");
   const [message, setMessage] = useState(
     "The camera and local model are off until you choose Start camera."
@@ -81,6 +82,12 @@ export function ScannerController() {
       void runtimeRef.current?.cleanup();
     };
   }, []);
+
+  useEffect(() => {
+    if (state === "ERROR" || state === "CANCELLED") {
+      retryRef.current?.focus();
+    }
+  }, [state]);
 
   function runtime(): ScannerRuntimeV1 {
     runtimeRef.current ??= new ScannerRuntimeV1();
@@ -147,7 +154,11 @@ export function ScannerController() {
       },
       onFailure: (failure) => {
         setState("ERROR");
-        setMessage(FAILURE_MESSAGES[failure]);
+        setMessage(
+          failure === "UNSUPPORTED_BROWSER" && !window.isSecureContext
+            ? "Camera scanning requires HTTPS or localhost. This page is not in a secure context, so camera access is unavailable. Manual entry remains available."
+            : FAILURE_MESSAGES[failure]
+        );
       },
     });
   }
@@ -271,6 +282,7 @@ export function ScannerController() {
               <button
                 className={styles.primaryButton}
                 onClick={startScanner}
+                ref={retryRef}
                 type="button"
               >
                 Try camera again

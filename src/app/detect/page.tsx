@@ -24,7 +24,7 @@ export default function DetectPage() {
           </p>
         </div>
       </header>
-      <main className="app-main" id="scanner-main">
+      <main className="app-main" id="scanner-main" tabIndex={-1}>
         <ScannerController />
       </main>
     </>

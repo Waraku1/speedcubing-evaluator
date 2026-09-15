@@ -91,6 +91,42 @@ a:focus-visible,
   padding: var(--space-8) var(--space-8) var(--space-12);
 }
 
+.app-error {
+  max-width: 70ch;
+  padding: var(--space-6);
+  border: 1px solid #d8a4a4;
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
+}
+
+.app-error h1 {
+  margin-top: 0;
+}
+
+.app-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.app-error-actions button,
+.app-error-actions a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+.app-error-actions button {
+  cursor: pointer;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -125,6 +161,9 @@ a:focus-visible,
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
     transition-duration: 0s !important;
   }
 }

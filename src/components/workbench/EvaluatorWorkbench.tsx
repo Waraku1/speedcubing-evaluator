@@ -168,7 +168,8 @@ export function EvaluatorWorkbench() {
       case "SUCCESS":
         return "Evaluation result ready";
       case "ERROR":
-        return state.error?.explanation ?? "The evaluation request failed.";
+        // The visible error summary owns the assertive announcement.
+        return "";
       case "CANCELLED":
         return "Request cancelled. Cube draft preserved.";
       default:

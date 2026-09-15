@@ -15,14 +15,11 @@ export const CubeValidationSummary = forwardRef<
   HTMLDivElement,
   CubeValidationSummaryProps
 >(function CubeValidationSummary({ validation, onFocusProblem }, ref) {
-  const isInvalid = validation.state === "INVALID";
-
   return (
     <div
       className={styles.validationSummary}
       data-state={validation.state}
       ref={ref}
-      role={isInvalid ? "alert" : undefined}
       tabIndex={-1}
     >
       <div className={styles.validationHeadingRow}>

@@ -8,7 +8,7 @@ export default function Home() {
         Skip to evaluator workbench
       </a>
       <WorkbenchHeader />
-      <main className="app-main" id="workbench-main">
+      <main className="app-main" id="workbench-main" tabIndex={-1}>
         <EvaluatorWorkbench />
       </main>
     </>

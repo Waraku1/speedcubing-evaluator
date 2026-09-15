@@ -19,16 +19,19 @@ export function ScannerStatus({
 
   return (
     <div
-      aria-atomic="true"
-      aria-live="polite"
       className={styles.status}
       data-state={state}
-      role={state === "ERROR" ? "alert" : "status"}
     >
-      <strong>{state.replaceAll("_", " ")}</strong>
-      <p>{message}</p>
+      <div
+        aria-atomic="true"
+        aria-live={state === "ERROR" ? "assertive" : "polite"}
+        role={state === "ERROR" ? "alert" : "status"}
+      >
+        <strong>{state.replaceAll("_", " ")}</strong>
+        <p>{message}</p>
+      </div>
       {scanning ? (
-        <p className={styles.sampleProgress}>
+        <p aria-live="off" className={styles.sampleProgress}>
           Stable samples: {acceptedSamples} of {requiredSamples}
         </p>
       ) : null}

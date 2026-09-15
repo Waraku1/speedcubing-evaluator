@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 /artifacts/rc-evidence/
+/artifacts/visual-signoff/
 
 # debug
 npm-debug.log*
