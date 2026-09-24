@@ -29,7 +29,7 @@ import {
   generateRandomState,
 } from "../../src/lib/ee-experiment/random-state";
 
-const STUDY_VERSION = "2.0.0";
+const STUDY_VERSION = "2.1.0";
 const SAMPLING_MODE = "random_state_uniform_coordinate_v1";
 const GENERATOR_VERSION = "random-state-sha256-coordinate-v1";
 const FEATURE_VERSION = "features-v1";
