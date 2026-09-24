@@ -45,7 +45,9 @@ Permutation sampling must use unbiased Fisher–Yates choices. Integer generatio
 ### 3.3 Reproducibility
 
 - Primary sample size: 300 states.
-- Sampling is pseudorandom but deterministically reproducible from a recorded study seed.
+- Frozen primary study seed: `EE-2026-RANDOM-STATE-MAIN-01`.
+- Pilot study seed: `EE-2026-RANDOM-STATE-PILOT-01`.
+- Sampling is pseudorandom but deterministically reproducible from the recorded study seed.
 - Use a versioned seeded random stream with sufficient state/output width for this experiment; the exact generator implementation and version are recorded.
 - `scramble_id` is derived from study seed + sample index, not from solver output.
 - The exact `state_signature` and cubie coordinates are stored for every sample.
