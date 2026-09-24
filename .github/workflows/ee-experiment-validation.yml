@@ -8,7 +8,7 @@ on:
       - "research/ee-experiment/**"
       - "src/lib/ee-experiment/**"
       - "scripts/ee-experiment/**"
-      - "tests/unit/ee-experiment-features.test.ts"
+      - "tests/unit/ee-*.test.ts"
       - ".github/workflows/ee-experiment-validation.yml"
   pull_request:
     branches:
@@ -17,7 +17,7 @@ on:
       - "research/ee-experiment/**"
       - "src/lib/ee-experiment/**"
       - "scripts/ee-experiment/**"
-      - "tests/unit/ee-experiment-features.test.ts"
+      - "tests/unit/ee-*.test.ts"
       - ".github/workflows/ee-experiment-validation.yml"
   workflow_dispatch:
 
@@ -35,15 +35,15 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts
+      - run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
       - run: pnpm type-check
-      - name: Run 20-scramble paired pilot
-        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples 20 --length 20 --seed EE-2026-PILOT-01 --out research/ee-experiment/output/pilot.csv
+      - name: Run 20-state paired pilot
+        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples 20 --seed EE-2026-RANDOM-STATE-PILOT-01 --out research/ee-experiment/output/pilot.csv
       - name: Check pilot manifest
-        run: node -e 'const m=require("./research/ee-experiment/output/pilot.manifest.json"); if(m.failedRows!==0||m.actualRows!==40||m.pairedScrambles!==20) process.exit(1); console.log(m)'
+        run: node -e 'const m=require("./research/ee-experiment/output/pilot.manifest.json"); if(m.failedRows!==0||m.actualRows!==40||m.pairedStates!==20||m.samplingMode!=="random_state_uniform_coordinate_v1") process.exit(1); console.log(m)'
       - uses: actions/upload-artifact@v4
         with:
-          name: ee-pilot-data
+          name: ee-random-state-pilot-data
           path: |
             research/ee-experiment/output/pilot.csv
             research/ee-experiment/output/pilot.manifest.json
