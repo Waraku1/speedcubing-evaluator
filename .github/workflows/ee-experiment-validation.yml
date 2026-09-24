@@ -10,6 +10,15 @@ on:
       - "scripts/ee-experiment/**"
       - "tests/unit/ee-experiment-features.test.ts"
       - ".github/workflows/ee-experiment-validation.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/ee-experiment/**"
+      - "src/lib/ee-experiment/**"
+      - "scripts/ee-experiment/**"
+      - "tests/unit/ee-experiment-features.test.ts"
+      - ".github/workflows/ee-experiment-validation.yml"
   workflow_dispatch:
 
 jobs:
