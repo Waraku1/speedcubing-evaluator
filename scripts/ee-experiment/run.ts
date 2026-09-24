@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -312,7 +313,6 @@ const csv = [
 
 writeFileSync(outPath, csv, "utf8");
 
-const { createHash } = await import("node:crypto");
 const csvSha256 = createHash("sha256").update(csv, "utf8").digest("hex");
 
 const failures = rows.filter((row) => row.status !== "ok");
