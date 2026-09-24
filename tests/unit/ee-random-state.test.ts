@@ -6,6 +6,10 @@ import {
 } from "../../src/lib/ee-experiment/features";
 
 import {
+  LEGAL_EO_VECTOR_COUNT,
+  eoHammingWeight,
+  eoVectorFromIndex,
+  generateEOExperimentState,
   generateRandomState,
   permutationParity,
 } from "../../src/lib/ee-experiment/random-state";
@@ -49,5 +53,37 @@ describe("EE random-state generator", () => {
       expect(features.twistedCornerCount).toBeLessThanOrEqual(8);
       expect(Number.isFinite(features.permutationCycleDeficit)).toBe(true);
     }
+  });
+  it("enumerates every legal EO vector exactly once with the exact Hamming-weight distribution", () => {
+    const seen = new Set<string>();
+    const counts = new Map<number, number>();
+
+    for (let eoIndex = 0; eoIndex < LEGAL_EO_VECTOR_COUNT; eoIndex++) {
+      const eo = eoVectorFromIndex(eoIndex);
+      expect(eo.reduce((sum, value) => sum + value, 0) % 2).toBe(0);
+      seen.add(eo.join(""));
+      const weight = eoHammingWeight(eo);
+      counts.set(weight, (counts.get(weight) ?? 0) + 1);
+    }
+
+    expect(seen.size).toBe(2048);
+    expect(Object.fromEntries(counts)).toEqual({
+      0: 1,
+      2: 66,
+      4: 495,
+      6: 924,
+      8: 495,
+      10: 66,
+      12: 1,
+    });
+  });
+
+  it("randomizes nuisance coordinates independently across complete EO blocks", () => {
+    const a = generateEOExperimentState("EE-EO-TEST", 0, 777);
+    const b = generateEOExperimentState("EE-EO-TEST", 1, 777);
+
+    expect(a.coordinates.eo).toEqual(b.coordinates.eo);
+    expect(a.eoHammingWeight).toBe(b.eoHammingWeight);
+    expect(a.stateSignature).not.toBe(b.stateSignature);
   });
 });
