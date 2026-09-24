@@ -233,3 +233,82 @@ export function generateRandomState(
     stateSignature,
   };
 }
+
+
+export const LEGAL_EO_VECTOR_COUNT = 1 << 11;
+
+export type GeneratedEOExperimentState = GeneratedRandomState & Readonly<{
+  blockIndex: number;
+  eoIndex: number;
+  eoHammingWeight: number;
+}>;
+
+export function eoVectorFromIndex(eoIndex: number): number[] {
+  if (!Number.isInteger(eoIndex) || eoIndex < 0 || eoIndex >= LEGAL_EO_VECTOR_COUNT) {
+    throw new Error(`eoIndex must be an integer in [0, ${LEGAL_EO_VECTOR_COUNT - 1}]`);
+  }
+
+  const eo = new Array<number>(12).fill(0);
+  let parity = 0;
+
+  for (let bit = 0; bit < 11; bit++) {
+    const value = (eoIndex >> bit) & 1;
+    eo[bit] = value;
+    parity ^= value;
+  }
+
+  eo[11] = parity;
+  return eo;
+}
+
+export function eoHammingWeight(eo: readonly number[]): number {
+  if (eo.length !== 12 || eo.some((value) => value !== 0 && value !== 1)) {
+    throw new Error("EO vector must contain twelve binary coordinates");
+  }
+  return eo.reduce((sum, value) => sum + value, 0);
+}
+
+export function generateEOExperimentState(
+  studySeed: string,
+  blockIndex: number,
+  eoIndex: number,
+): GeneratedEOExperimentState {
+  if (!Number.isInteger(blockIndex) || blockIndex < 0) {
+    throw new Error("blockIndex must be a non-negative integer");
+  }
+
+  const random = new SeededRandomStream(
+    `${studySeed}\0eo-block:${blockIndex}\0eo-index:${eoIndex}`,
+  );
+
+  const cp = randomPermutation(8, random);
+
+  const co = new Array<number>(8).fill(0);
+  let cornerOrientationSum = 0;
+  for (let i = 0; i < 7; i++) {
+    co[i] = random.int(3);
+    cornerOrientationSum += co[i];
+  }
+  co[7] = (3 - (cornerOrientationSum % 3)) % 3;
+
+  const ep = randomPermutation(12, random);
+  if (permutationParity(ep) !== permutationParity(cp)) {
+    [ep[0], ep[1]] = [ep[1], ep[0]];
+  }
+
+  const eo = eoVectorFromIndex(eoIndex);
+  const coordinates = { cp, co, ep, eo };
+  assertRandomStateCoordinates(coordinates);
+
+  const stateSignature = encodeRandomStateFacelets(coordinates);
+
+  return {
+    studySeed,
+    sampleIndex: blockIndex * LEGAL_EO_VECTOR_COUNT + eoIndex,
+    blockIndex,
+    eoIndex,
+    eoHammingWeight: eoHammingWeight(eo),
+    coordinates,
+    stateSignature,
+  };
+}
