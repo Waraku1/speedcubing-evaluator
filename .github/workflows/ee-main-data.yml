@@ -14,7 +14,7 @@ jobs:
     env:
       EE_SOURCE_COMMIT_SHA: ${{ github.sha }}
       EE_STUDY_SEED: EE-2026-RANDOM-STATE-MAIN-01
-      EE_SAMPLE_COUNT: "300"
+      EE_SAMPLE_COUNT: "720"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -29,14 +29,14 @@ jobs:
         run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
       - name: Type-check experiment dependency graph
         run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
-      - name: Generate 300-state paired main dataset
-        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples "$EE_SAMPLE_COUNT" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-300.csv
+      - name: Generate 720-state paired main dataset
+        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples "$EE_SAMPLE_COUNT" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-720.csv
       - name: Independently audit main dataset
-        run: python3 scripts/ee-experiment/audit.py --csv research/ee-experiment/output/main-300.csv --manifest research/ee-experiment/output/main-300.manifest.json --expected-samples "$EE_SAMPLE_COUNT" --out research/ee-experiment/output/main-300.audit.json
+        run: python3 scripts/ee-experiment/audit.py --csv research/ee-experiment/output/main-300.csv --manifest research/ee-experiment/output/main-720.manifest.json --expected-samples "$EE_SAMPLE_COUNT" --out research/ee-experiment/output/main-720.audit.json
       - name: Upload immutable research artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ee-random-state-main-300
+          name: ee-random-state-main-720
           retention-days: 90
           path: |
             research/ee-experiment/output/main-300.csv
