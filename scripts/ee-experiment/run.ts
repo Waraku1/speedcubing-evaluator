@@ -144,7 +144,8 @@ function solveHumanCFOP(state: string): MethodResult {
 
 const args = parseArgs(process.argv.slice(2));
 const createdAt = new Date().toISOString();
-const solverCommitSha = gitSha();
+const executionCommitSha = gitSha();
+const solverCommitSha = process.env.EE_SOURCE_COMMIT_SHA?.trim() || executionCommitSha;
 
 const columns = [
   "study_version",
@@ -179,6 +180,7 @@ const columns = [
   "generator_version",
   "feature_extractor_version",
   "solver_commit_sha",
+  "execution_commit_sha",
   "created_at_utc",
 ];
 
@@ -279,6 +281,7 @@ for (let index = 0; index < args.samples; index++) {
       generator_version: GENERATOR_VERSION,
       feature_extractor_version: FEATURE_VERSION,
       solver_commit_sha: solverCommitSha,
+      execution_commit_sha: executionCommitSha,
       created_at_utc: createdAt,
     });
   }
@@ -305,9 +308,12 @@ mkdirSync(dirname(outPath), { recursive: true });
 const csv = [
   columns.join(","),
   ...rows.map((row) => columns.map((column) => csvCell(row[column])).join(",")),
-].join("\n");
+].join("\n") + "\n";
 
-writeFileSync(outPath, csv + "\n", "utf8");
+writeFileSync(outPath, csv, "utf8");
+
+const { createHash } = await import("node:crypto");
+const csvSha256 = createHash("sha256").update(csv, "utf8").digest("hex");
 
 const failures = rows.filter((row) => row.status !== "ok");
 const duplicateRows = rows.filter((row) => row.state_duplicate_of !== "");
@@ -328,6 +334,8 @@ const manifest = {
   generatorVersion: GENERATOR_VERSION,
   featureExtractorVersion: FEATURE_VERSION,
   solverCommitSha,
+  executionCommitSha,
+  csvSha256,
   csv: outPath,
 };
 
