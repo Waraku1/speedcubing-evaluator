@@ -24,6 +24,8 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      EE_SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
