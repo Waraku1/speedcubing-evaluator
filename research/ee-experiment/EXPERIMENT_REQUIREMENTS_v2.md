@@ -175,6 +175,7 @@ Required fields:
 - generator_version
 - feature_extractor_version
 - solver_commit_sha
+- execution_commit_sha
 - created_at_utc
 
 Primary key:
@@ -219,7 +220,9 @@ Run at least 20 paired sampled states and require:
 - 100% solution verification for both solver adapters;
 - no missing paired solver row;
 - finite feature and response metrics;
-- stable CSV and manifest output.
+- stable CSV and manifest output;
+- SHA-256 digest of the emitted CSV in the manifest;
+- stable source-commit provenance distinct from any ephemeral CI merge commit.
 
 In addition, unit tests must establish the generator invariants independently of solver success.
 
