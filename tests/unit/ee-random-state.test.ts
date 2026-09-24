@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeCubies,
   extractStateFeatures,
 } from "../../src/lib/ee-experiment/features";
 
@@ -8,6 +9,10 @@ import {
   generateRandomState,
   permutationParity,
 } from "../../src/lib/ee-experiment/random-state";
+
+import {
+  assertValidCubeState,
+} from "../../src/lib/cfop-solver/state-adapter";
 
 describe("EE random-state generator", () => {
   it("regenerates the identical state from study seed and sample index", () => {
@@ -17,7 +22,7 @@ describe("EE random-state generator", () => {
     expect(b).toEqual(a);
   });
 
-  it("satisfies cube orientation and parity constraints across a deterministic sample", () => {
+  it("satisfies cube constraints and coordinate/facelet round-trip", () => {
     for (let index = 0; index < 100; index++) {
       const generated = generateRandomState("EE-RANDOM-STATE-INVARIANTS", index);
       const { cp, co, ep, eo } = generated.coordinates;
@@ -28,6 +33,14 @@ describe("EE random-state generator", () => {
       expect(eo.reduce((sum, value) => sum + value, 0) % 2).toBe(0);
       expect(permutationParity(cp)).toBe(permutationParity(ep));
       expect(generated.stateSignature).toMatch(/^[URFDLB]{54}$/);
+
+      expect(() => assertValidCubeState(generated.stateSignature)).not.toThrow();
+
+      const decoded = decodeCubies(generated.stateSignature);
+      expect(decoded.cornerPermutation).toEqual(cp);
+      expect(decoded.cornerOrientation).toEqual(co);
+      expect(decoded.edgePermutation).toEqual(ep);
+      expect(decoded.edgeOrientation).toEqual(eo);
 
       const features = extractStateFeatures(generated.stateSignature);
       expect(features.flippedEdgeCount).toBeGreaterThanOrEqual(0);
