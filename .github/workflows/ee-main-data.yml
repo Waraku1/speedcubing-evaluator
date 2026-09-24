@@ -1,17 +1,20 @@
-name: EE main data generation
+name: EE main random-state dataset
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/ee-main-data.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ee-main-random-state-dataset
+  cancel-in-progress: false
+
 jobs:
-  generate-main:
+  generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      EE_SOURCE_COMMIT_SHA: ${{ github.sha }}
+      EE_STUDY_SEED: EE-2026-RANDOM-STATE-MAIN-01
+      EE_SAMPLE_COUNT: "300"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,20 +25,20 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
-      - run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
-      - name: Generate frozen 300-state primary dataset
-        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples 300 --seed EE-2026-RANDOM-STATE-MAIN-01 --out research/ee-experiment/output/main-v1.csv
-      - name: Check primary manifest
-        run: node -e 'const m=require("./research/ee-experiment/output/main-v1.manifest.json"); if(m.failedRows!==0||m.actualRows!==600||m.pairedStates!==300||m.samples!==300||m.studySeed!=="EE-2026-RANDOM-STATE-MAIN-01"||m.samplingMode!=="random_state_uniform_coordinate_v1") process.exit(1); console.log(m)'
-      - name: Write checksums
-        run: |
-          cd research/ee-experiment/output
-          sha256sum main-v1.csv main-v1.manifest.json > main-v1.sha256
-      - uses: actions/upload-artifact@v4
+      - name: Validate experiment unit tests
+        run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
+      - name: Type-check experiment dependency graph
+        run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
+      - name: Generate 300-state paired main dataset
+        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples "$EE_SAMPLE_COUNT" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-300.csv
+      - name: Independently audit main dataset
+        run: python3 scripts/ee-experiment/audit.py --csv research/ee-experiment/output/main-300.csv --manifest research/ee-experiment/output/main-300.manifest.json --expected-samples "$EE_SAMPLE_COUNT" --out research/ee-experiment/output/main-300.audit.json
+      - name: Upload immutable research artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ee-random-state-main-v1
+          name: ee-random-state-main-300
+          retention-days: 90
           path: |
-            research/ee-experiment/output/main-v1.csv
-            research/ee-experiment/output/main-v1.manifest.json
-            research/ee-experiment/output/main-v1.sha256
+            research/ee-experiment/output/main-300.csv
+            research/ee-experiment/output/main-300.manifest.json
+            research/ee-experiment/output/main-300.audit.json
