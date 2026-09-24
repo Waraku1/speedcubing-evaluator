@@ -35,12 +35,18 @@ type Args = {
   out: string;
 };
 
+type MethodId = "cfop-human-v1" | "two-phase-cubejs-v1";
+
 type MethodResult = {
-  methodId: "cfop-human-v1" | "two-phase-cubejs-v1";
-  methodVersion: string;
   solution: Move[];
   runtimeMs: number;
   verified: boolean;
+};
+
+type MethodAdapter = {
+  methodId: MethodId;
+  methodVersion: string;
+  solve: () => MethodResult;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -60,6 +66,8 @@ function parseArgs(argv: string[]): Args {
   }
   if (!Number.isInteger(result.samples) || result.samples <= 0) throw new Error("samples must be a positive integer");
   if (!Number.isInteger(result.length) || result.length <= 0) throw new Error("length must be a positive integer");
+  if (!result.seed) throw new Error("seed must be non-empty");
+  if (!result.out) throw new Error("out must be non-empty");
   return result;
 }
 
@@ -96,7 +104,7 @@ function generateScramble(random: () => number, length: number): Move[] {
   const result: Move[] = [];
   while (result.length < length) {
     const face = FACES[Math.floor(random() * FACES.length)];
-    const previousFace = result.at(-1)?.[0];
+    const previousFace = result.length > 0 ? result[result.length - 1][0] : undefined;
     if (face === previousFace) continue;
 
     if (result.length >= 2) {
@@ -121,13 +129,10 @@ function solveTwoPhase(state: string): MethodResult {
   const raw = Cube.fromString(state).solve();
   const runtimeMs = performance.now() - start;
   const solution = parseMoveString(raw);
-  const verified = applyMoves(state, solution) === SOLVED_STATE;
   return {
-    methodId: "two-phase-cubejs-v1",
-    methodVersion: "cubejs-1.3.2",
     solution,
     runtimeMs,
-    verified,
+    verified: applyMoves(state, solution) === SOLVED_STATE,
   };
 }
 
@@ -136,8 +141,6 @@ function solveHumanCFOP(scramble: readonly Move[]): MethodResult {
   const result = solveCFOP(scramble);
   const runtimeMs = performance.now() - start;
   return {
-    methodId: "cfop-human-v1",
-    methodVersion: "repository-cfop-db3f177",
     solution: [...result.solution],
     runtimeMs,
     verified: verifySolveResult(result),
@@ -145,8 +148,8 @@ function solveHumanCFOP(scramble: readonly Move[]): MethodResult {
 }
 
 function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  const valueText = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(valueText) ? `"${valueText.replaceAll('"', '""')}"` : valueText;
 }
 
 function gitSha(): string {
@@ -172,23 +175,36 @@ const columns = [
 ];
 
 const rows: Record<string, unknown>[] = [];
+const seenScrambleIds = new Set<string>();
 
 for (let index = 0; index < args.samples; index++) {
   const scramble = generateScramble(random, args.length);
+  if (scramble.length !== args.length) throw new Error("generator length invariant failed");
+
   const state = applyMoves(SOLVED_STATE, scramble);
   const stateFeatures = extractStateFeatures(state);
   const scrambleId = `${args.seed}-${String(index + 1).padStart(4, "0")}`;
+  if (seenScrambleIds.has(scrambleId)) throw new Error(`duplicate scramble_id: ${scrambleId}`);
+  seenScrambleIds.add(scrambleId);
 
-  const methods: Array<() => MethodResult> = [
-    () => solveHumanCFOP(scramble),
-    () => solveTwoPhase(state),
+  const methods: MethodAdapter[] = [
+    {
+      methodId: "cfop-human-v1",
+      methodVersion: "repository-cfop-db3f177",
+      solve: () => solveHumanCFOP(scramble),
+    },
+    {
+      methodId: "two-phase-cubejs-v1",
+      methodVersion: "cubejs-1.3.2",
+      solve: () => solveTwoPhase(state),
+    },
   ];
 
-  for (const solve of methods) {
+  for (const method of methods) {
     let result: MethodResult | null = null;
     let error = "";
     try {
-      result = solve();
+      result = method.solve();
       if (!result.verified) throw new Error("solution replay verification failed");
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
@@ -209,8 +225,8 @@ for (let index = 0; index < args.samples; index++) {
       x_corner_cycle_deficit: stateFeatures.cornerCycleDeficit,
       x_edge_cycle_deficit: stateFeatures.edgeCycleDeficit,
       x_permutation_cycle_deficit: stateFeatures.permutationCycleDeficit,
-      method_id: result?.methodId ?? "unknown",
-      method_version: result?.methodVersion ?? "unknown",
+      method_id: method.methodId,
+      method_version: method.methodVersion,
       run_index: 1,
       solution_moves: solution.join(" "),
       y_solution_length_htm: result ? solution.length : "",
@@ -227,6 +243,17 @@ for (let index = 0; index < args.samples; index++) {
   }
 }
 
+const expectedRows = args.samples * 2;
+if (rows.length !== expectedRows) throw new Error(`row count invariant failed: ${rows.length}/${expectedRows}`);
+
+for (const scrambleId of seenScrambleIds) {
+  const paired = rows.filter((row) => row.scramble_id === scrambleId);
+  const methodIds = new Set(paired.map((row) => row.method_id));
+  if (paired.length !== 2 || methodIds.size !== 2) {
+    throw new Error(`pairing invariant failed for ${scrambleId}`);
+  }
+}
+
 const outPath = resolve(args.out);
 mkdirSync(dirname(outPath), { recursive: true });
 const csv = [
@@ -235,15 +262,18 @@ const csv = [
 ].join("\n");
 writeFileSync(outPath, csv + "\n", "utf8");
 
+const failures = rows.filter((row) => row.status !== "ok");
 const manifest = {
   studyVersion: STUDY_VERSION,
   generatedAtUtc: createdAt,
   seed: args.seed,
   samples: args.samples,
   scrambleLengthHtm: args.length,
-  expectedRows: args.samples * 2,
+  expectedRows,
   actualRows: rows.length,
-  okRows: rows.filter((row) => row.status === "ok").length,
+  okRows: rows.length - failures.length,
+  failedRows: failures.length,
+  pairedScrambles: seenScrambleIds.size,
   methods: ["cfop-human-v1", "two-phase-cubejs-v1"],
   generatorVersion: GENERATOR_VERSION,
   featureExtractorVersion: FEATURE_VERSION,
@@ -252,7 +282,6 @@ const manifest = {
 };
 writeFileSync(outPath.replace(/\.csv$/i, ".manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
 
-const failures = rows.filter((row) => row.status !== "ok");
 console.log(JSON.stringify(manifest, null, 2));
 if (failures.length > 0) {
   console.error(`Experiment produced ${failures.length} failed rows`);
