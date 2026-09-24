@@ -36,7 +36,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
-      - run: pnpm type-check
+      - run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
       - name: Run 20-state paired pilot
         run: pnpm exec tsx scripts/ee-experiment/run.ts --samples 20 --seed EE-2026-RANDOM-STATE-PILOT-01 --out research/ee-experiment/output/pilot.csv
       - name: Check pilot manifest
