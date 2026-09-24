@@ -1,9 +1,9 @@
 name: EE main data generation
 
 on:
-  push:
+  pull_request:
     branches:
-      - ee/experiment-pipeline-v1
+      - main
     paths:
       - ".github/workflows/ee-main-data.yml"
   workflow_dispatch:
