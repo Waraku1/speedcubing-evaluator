@@ -1,6 +1,31 @@
 import { createHash } from "node:crypto";
 
-import Cube from "cubejs";
+const CORNER_FACELETS = [
+  [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
+  [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51],
+] as const;
+
+const CORNER_COLORS = [
+  ["U", "R", "F"], ["U", "F", "L"], ["U", "L", "B"], ["U", "B", "R"],
+  ["D", "F", "R"], ["D", "L", "F"], ["D", "B", "L"], ["D", "R", "B"],
+] as const;
+
+const EDGE_FACELETS = [
+  [5, 10], [7, 19], [3, 37], [1, 46],
+  [32, 16], [28, 25], [30, 43], [34, 52],
+  [23, 12], [21, 41], [50, 39], [48, 14],
+] as const;
+
+const EDGE_COLORS = [
+  ["U", "R"], ["U", "F"], ["U", "L"], ["U", "B"],
+  ["D", "R"], ["D", "F"], ["D", "L"], ["D", "B"],
+  ["F", "R"], ["F", "L"], ["B", "L"], ["B", "R"],
+] as const;
+
+const CENTERS = [
+  [4, "U"], [13, "R"], [22, "F"],
+  [31, "D"], [40, "L"], [49, "B"],
+] as const;
 
 export type RandomStateCoordinates = Readonly<{
   cp: number[];
@@ -121,11 +146,11 @@ export function assertRandomStateCoordinates(
     throw new Error("invalid random-state coordinate lengths");
   }
 
-  if (new Set(cp).size !== 8 || cp.some((value) => value < 0 || value > 7)) {
+  if (new Set(cp).size !== 8 || cp.some((value) => !Number.isInteger(value) || value < 0 || value > 7)) {
     throw new Error("invalid corner permutation");
   }
 
-  if (new Set(ep).size !== 12 || ep.some((value) => value < 0 || value > 11)) {
+  if (new Set(ep).size !== 12 || ep.some((value) => !Number.isInteger(value) || value < 0 || value > 11)) {
     throw new Error("invalid edge permutation");
   }
 
@@ -150,21 +175,56 @@ export function assertRandomStateCoordinates(
   }
 }
 
+export function encodeRandomStateFacelets(
+  coordinates: RandomStateCoordinates,
+): string {
+  assertRandomStateCoordinates(coordinates);
+
+  const facelets = new Array<string>(54).fill("?");
+
+  for (const [index, color] of CENTERS) {
+    facelets[index] = color;
+  }
+
+  for (let position = 0; position < CORNER_FACELETS.length; position++) {
+    const cubie = coordinates.cp[position];
+    const orientation = coordinates.co[position];
+    const colors = CORNER_COLORS[cubie];
+    const indices = CORNER_FACELETS[position];
+
+    facelets[indices[orientation]] = colors[0];
+    facelets[indices[(orientation + 1) % 3]] = colors[1];
+    facelets[indices[(orientation + 2) % 3]] = colors[2];
+  }
+
+  for (let position = 0; position < EDGE_FACELETS.length; position++) {
+    const cubie = coordinates.ep[position];
+    const orientation = coordinates.eo[position];
+    const colors = EDGE_COLORS[cubie];
+    const indices = EDGE_FACELETS[position];
+
+    if (orientation === 0) {
+      facelets[indices[0]] = colors[0];
+      facelets[indices[1]] = colors[1];
+    } else {
+      facelets[indices[0]] = colors[1];
+      facelets[indices[1]] = colors[0];
+    }
+  }
+
+  if (facelets.some((value) => value === "?")) {
+    throw new Error("failed to encode every facelet");
+  }
+
+  return facelets.join("");
+}
+
 export function generateRandomState(
   studySeed: string,
   sampleIndex: number,
 ): GeneratedRandomState {
   const coordinates = generateRandomStateCoordinates(studySeed, sampleIndex);
-  assertRandomStateCoordinates(coordinates);
-
-  const cube = new Cube({
-    cp: [...coordinates.cp],
-    co: [...coordinates.co],
-    ep: [...coordinates.ep],
-    eo: [...coordinates.eo],
-  });
-
-  const stateSignature = cube.asString();
+  const stateSignature = encodeRandomStateFacelets(coordinates);
 
   return {
     studySeed,
