@@ -1,6 +1,6 @@
-# IB Math AA EE — Experiment Requirements v2.0
+# IB Math AA EE — Experiment Requirements v2.1
 
-Status: IMPLEMENTATION BASELINE — RANDOM-STATE SAMPLING
+Status: FROZEN DESIGN CANDIDATE — RANDOM-STATE SAMPLING
 Branch: `ee/experiment-pipeline-v1`
 
 ## 1. Research objective
@@ -44,7 +44,7 @@ Permutation sampling must use unbiased Fisher–Yates choices. Integer generatio
 
 ### 3.3 Reproducibility
 
-- Primary sample size: 300 states.
+- Primary sample size: 720 states.
 - Frozen primary study seed: `EE-2026-RANDOM-STATE-MAIN-01`.
 - Pilot study seed: `EE-2026-RANDOM-STATE-PILOT-01`.
 - Sampling is pseudorandom but deterministically reproducible from the recorded study seed.
@@ -184,28 +184,69 @@ Primary key:
 
 ## 9. Analysis contract
 
-Primary model:
+### 9.1 Primary estimand
 
-`y_ij = beta_0 + Σ beta_k x_ik + alpha_j + Σ gamma_kj x_ik + u_i + epsilon_ij`
+For each sampled state `i`, define the paired solution-length difference
 
-where:
-- `i` indexes sampled states;
-- `j` indexes solving methods;
-- `u_i` is a state-level random intercept.
+`Delta_i = L_CFOP,i - L_TwoPhase,i`.
 
-The primary predictors are:
-- flipped-edge count;
-- twisted-corner count;
-- permutation-cycle deficit.
+This directly measures the method-dependent difference for the same cube state.
 
-Report:
-- coefficient estimates;
-- 95% confidence intervals;
-- standardized numeric effect sizes;
-- residual diagnostics;
-- feature × method interactions;
-- paired within-state method contrasts;
-- sensitivity to alternative but pre-declared state-feature parameterizations.
+### 9.2 Primary model
+
+Standardize the three pre-declared state predictors over the 720-state main dataset:
+
+- `z(F_e)`: flipped-edge count;
+- `z(T_c)`: twisted-corner count;
+- `z(D_pi)`: permutation-cycle deficit.
+
+Fit the multiple linear regression
+
+`Delta_i = delta_0 + delta_1 z(F_e,i) + delta_2 z(T_c,i) + delta_3 z(D_pi,i) + epsilon_i`.
+
+The primary omnibus hypothesis is
+
+`H0: delta_1 = delta_2 = delta_3 = 0`
+
+against the alternative that at least one coefficient is non-zero.
+
+Use a two-sided significance level `alpha = 0.05`. Report coefficients, 95% confidence intervals, `R^2`, adjusted `R^2`, the omnibus F statistic, and residual diagnostics.
+
+### 9.3 Sample-size determination
+
+The sample size is fixed before main-data generation.
+
+Define the minimum joint effect of interest as `f^2 = 0.02`, corresponding to approximately
+
+`R^2 = f^2 / (1 + f^2) = 0.0196`
+
+when comparing the three-predictor model with the intercept-only model. Thus the experiment is designed to detect a joint relationship explaining about 2% of the variance in the paired method difference.
+
+For the omnibus F test with:
+- number of tested predictors `q = 3`;
+- `alpha = 0.05`;
+- target power `1 - beta = 0.90`;
+- `f^2 = 0.02`;
+
+the noncentral-F power calculation uses
+
+`df_1 = 3`,
+`df_2 = N - 4`,
+`lambda = N f^2`.
+
+The minimum integer sample size satisfying power >= 0.90 is `N = 713` states. The pre-declared main sample is rounded upward to **720 independent random states**, producing **1,440 solver rows** before any failure handling.
+
+The 20-state pilot is used only for pipeline validation, runtime feasibility, and schema verification. It is not used to estimate the effect size for this power calculation and is not pooled into the main analysis.
+
+### 9.4 Secondary analyses
+
+Secondary, clearly labeled analyses may include:
+- method-specific multiple regressions for CFOP and two-phase;
+- the algebraically equivalent method × feature interaction formulation on the long-format paired data;
+- the secondary response variables move-transition entropy and axis-change rate;
+- sensitivity to pre-declared alternative state-feature parameterizations.
+
+These analyses do not replace the primary paired-difference model.
 
 Do not select predictors by significance after inspecting the main dataset.
 
@@ -226,7 +267,7 @@ Run at least 20 paired sampled states and require:
 
 In addition, unit tests must establish the generator invariants independently of solver success.
 
-Only after this gate passes should the 300-state primary dataset be generated.
+Only after this gate passes should the 720-state primary dataset be generated.
 
 ## 11. Methodological interpretation
 
