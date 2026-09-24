@@ -1,10 +1,15 @@
-name: EE main random-state dataset
+name: EE EO Hamming-weight main dataset
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ee/data-freeze-v3.0.0
+    paths:
+      - "research/ee-experiment/DATA_FREEZE_v3.md"
 
 concurrency:
-  group: ee-main-random-state-dataset
+  group: ee-eo-main-v3
   cancel-in-progress: false
 
 jobs:
@@ -13,8 +18,8 @@ jobs:
     timeout-minutes: 45
     env:
       EE_SOURCE_COMMIT_SHA: ${{ github.sha }}
-      EE_STUDY_SEED: EE-2026-RANDOM-STATE-MAIN-01
-      EE_SAMPLE_COUNT: "720"
+      EE_STUDY_SEED: EE-2026-EO-MAIN-01
+      EE_EO_BLOCKS: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,20 +30,29 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Validate experiment unit tests
+
+      - name: Validate EE generator unit tests
         run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
-      - name: Type-check experiment dependency graph
+
+      - name: Type-check EE experiment dependency graph
         run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
-      - name: Generate 720-state paired main dataset
-        run: pnpm exec tsx scripts/ee-experiment/run.ts --samples "$EE_SAMPLE_COUNT" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-720.csv
-      - name: Independently audit main dataset
-        run: python3 scripts/ee-experiment/audit.py --csv research/ee-experiment/output/main-300.csv --manifest research/ee-experiment/output/main-720.manifest.json --expected-samples "$EE_SAMPLE_COUNT" --out research/ee-experiment/output/main-720.audit.json
-      - name: Upload immutable research artifact
+
+      - name: Generate two complete EO sweeps
+        run: pnpm exec tsx scripts/ee-experiment/run-eo.ts --blocks "$EE_EO_BLOCKS" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-eo-4096.csv
+
+      - name: Independently audit EO design invariants
+        run: python3 scripts/ee-experiment/audit-eo.py --csv research/ee-experiment/output/main-eo-4096.csv --manifest research/ee-experiment/output/main-eo-4096.manifest.json --blocks "$EE_EO_BLOCKS" --out research/ee-experiment/output/main-eo-4096.audit.json
+
+      - name: Calculate pre-declared EO explained-variance statistics
+        run: python3 scripts/ee-experiment/analyze-eo.py --csv research/ee-experiment/output/main-eo-4096.csv --out research/ee-experiment/output/main-eo-4096.analysis.json
+
+      - name: Upload immutable EO research artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ee-random-state-main-720
+          name: ee-eo-main-v3-4096
           retention-days: 90
           path: |
-            research/ee-experiment/output/main-300.csv
-            research/ee-experiment/output/main-300.manifest.json
-            research/ee-experiment/output/main-300.audit.json
+            research/ee-experiment/output/main-eo-4096.csv
+            research/ee-experiment/output/main-eo-4096.manifest.json
+            research/ee-experiment/output/main-eo-4096.audit.json
+            research/ee-experiment/output/main-eo-4096.analysis.json
