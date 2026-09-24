@@ -65,9 +65,9 @@ Across the 300 unique states:
 | --- | ---: | ---: | ---: | ---: |
 | Flipped-edge count | 6.03 | 1.65 | 2 | 10 |
 | Twisted-corner count | 5.44 | 1.37 | 0 | 8 |
-| Corner cycle deficit | 5.29 | 1.13 | 1 | 7 |
+| Corner cycle deficit | 5.29 | 1.13 | 2 | 7 |
 | Edge cycle deficit | 8.82 | 1.30 | 4 | 11 |
-| Permutation-cycle deficit | 14.11 | 1.67 | 8 | 18 |
+| Permutation-cycle deficit | 14.11 | 1.67 | 10 | 18 |
 
 The primary predictors are non-degenerate and span multiple values in the frozen sample.
 
