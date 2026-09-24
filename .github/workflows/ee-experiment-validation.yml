@@ -41,11 +41,14 @@ jobs:
       - run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
       - name: Run 20-state paired pilot
         run: pnpm exec tsx scripts/ee-experiment/run.ts --samples 20 --seed EE-2026-RANDOM-STATE-PILOT-01 --out research/ee-experiment/output/pilot.csv
+      - name: Independently audit pilot dataset
+        run: python3 scripts/ee-experiment/audit.py --csv research/ee-experiment/output/pilot.csv --manifest research/ee-experiment/output/pilot.manifest.json --expected-samples 20 --out research/ee-experiment/output/pilot.audit.json
       - name: Check pilot manifest
-        run: node -e 'const m=require("./research/ee-experiment/output/pilot.manifest.json"); if(m.failedRows!==0||m.actualRows!==40||m.pairedStates!==20||m.samplingMode!=="random_state_uniform_coordinate_v1") process.exit(1); console.log(m)'
+        run: node -e 'const m=require("./research/ee-experiment/output/pilot.manifest.json"); if(m.failedRows!==0||m.actualRows!==40||m.pairedStates!==20||m.samplingMode!=="random_state_uniform_coordinate_v1"||!m.csvSha256) process.exit(1); console.log(m)'
       - uses: actions/upload-artifact@v4
         with:
           name: ee-random-state-pilot-data
           path: |
             research/ee-experiment/output/pilot.csv
             research/ee-experiment/output/pilot.manifest.json
+            research/ee-experiment/output/pilot.audit.json
