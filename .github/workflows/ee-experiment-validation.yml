@@ -1,0 +1,68 @@
+name: EE experiment validation
+
+on:
+  push:
+    branches:
+      - ee/experiment-pipeline-v1
+    paths:
+      - "research/ee-experiment/**"
+      - "src/lib/ee-experiment/**"
+      - "scripts/ee-experiment/**"
+      - "tests/unit/ee-*.test.ts"
+      - ".github/workflows/ee-experiment-validation.yml"
+      - ".github/workflows/ee-main-data.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/ee-experiment/**"
+      - "src/lib/ee-experiment/**"
+      - "scripts/ee-experiment/**"
+      - "tests/unit/ee-*.test.ts"
+      - ".github/workflows/ee-experiment-validation.yml"
+      - ".github/workflows/ee-main-data.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      EE_SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run EE unit tests
+        run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
+
+      - name: Type-check EE dependency graph
+        run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
+
+      - name: Generate v4 200-state direct-random validation sample
+        run: pnpm exec tsx scripts/ee-experiment/run-srs-eo.ts --samples 200 --seed EE-2026-EO-SRS-VALIDATION-01 --out research/ee-experiment/output/v4-validation.csv
+
+      - name: Audit v4 validation sample
+        run: python3 scripts/ee-experiment/audit-srs-eo.py --csv research/ee-experiment/output/v4-validation.csv --manifest research/ee-experiment/output/v4-validation.manifest.json --expected-samples 200 --out research/ee-experiment/output/v4-validation.audit.json
+
+      - name: Exercise v4 analysis pipeline
+        run: python3 scripts/ee-experiment/analyze-srs-eo.py --csv research/ee-experiment/output/v4-validation.csv --bootstrap 200 --bootstrap-seed EE-2026-EO-SRS-VALIDATION-BOOTSTRAP-01 --out research/ee-experiment/output/v4-validation.analysis.json
+
+      - name: Check v4 manifest
+        run: node -e 'const m=require("./research/ee-experiment/output/v4-validation.manifest.json"); if(m.failedRows!==0||m.actualRows!==400||m.pairedStates!==200||m.samplingMode!=="direct_uniform_random_state_v1"||m.studyVersion!=="4.0.0"||!m.csvSha256) process.exit(1); console.log(m)'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ee-v4-validation-data
+          path: |
+            research/ee-experiment/output/v4-validation.csv
+            research/ee-experiment/output/v4-validation.manifest.json
+            research/ee-experiment/output/v4-validation.audit.json
+            research/ee-experiment/output/v4-validation.analysis.json
