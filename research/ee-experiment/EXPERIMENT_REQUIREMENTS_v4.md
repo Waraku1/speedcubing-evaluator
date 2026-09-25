@@ -1,6 +1,6 @@
 # IB Math AA EE — EO Hamming-Weight Experiment Requirements v4.0
 
-Status: DESIGN CANDIDATE — MAIN DATA NOT YET GENERATED
+Status: DESIGN FROZEN — MAIN DATA NOT YET GENERATED
 Branch: `ee/experiment-pipeline-v1`
 
 This document supersedes v3.0 for any future confirmatory main-data collection.
@@ -93,7 +93,7 @@ Using the standard fixed-model noncentral-F sensitivity calculation with:
 
 the minimum required sample is approximately 17,408 independent random states.
 
-The frozen candidate sample size is rounded upward to:
+The frozen confirmatory sample size is:
 
 `N = 20,480 random states`.
 
@@ -263,6 +263,6 @@ The confirmatory v4 dataset is accepted only if:
 - sole primary predictor: EO Hamming weight
 - primary effect-size metric: categorical eta-squared
 - minimum sensitivity target used for planning: eta-squared = 0.001
-- bootstrap resamples: 10,000
+- bootstrap resamples: 10,000\n- bootstrap seed: `EE-2026-EO-SRS-BOOTSTRAP-01`
 
-Main-data generation must not begin until this v4 design is explicitly accepted as the confirmatory design.
+This v4 design was explicitly accepted before main-data generation. The parameters in Section 14 are frozen for the confirmatory run.
