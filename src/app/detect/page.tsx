@@ -3,13 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as ort from "onnxruntime-web";
 import { runInference } from "@/lib/detect/visionOnnx";
-import { detectedScanToFacelets, DETECTED_SCAN_STORAGE_KEY } from "@/lib/detect/solverAdapter";
-import { useRouter } from "next/navigation";
-import "./detect.css";
 
 export default function Home() {
-  const router = useRouter();
-  const [transferError, setTransferError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -212,12 +207,10 @@ export default function Home() {
     setProgress(0);
     setCurrentStep(1);
     setStatus("It has been reset. Restart from step 1.");
-    setTransferError("");
   };
 
   // --- 手動色修正用のハンドラー ---
   const handleColorChange = (face: string, index: number, newColor: string) => {
-    setTransferError("");
     if (["U", "R", "B"].includes(face)) {
       setStep1Final((prev) => {
         const next = [...prev];
@@ -249,30 +242,16 @@ export default function Home() {
   faceD[4] = "D";
   faceF[4] = "F";
   faceL[4] = "L";
-
-  const allFacesKnown = [step1Final, step2Final].every((step) =>
-    step.every((color, index) => index % 9 === 4 || color !== "N"));
-
-  const openSolver = () => {
-    try {
-      const { facelets } = detectedScanToFacelets({ step1: step1Final, step2: step2Final });
-      sessionStorage.setItem(DETECTED_SCAN_STORAGE_KEY, facelets);
-      setTransferError("");
-      router.push("/solver");
-    } catch (cause) {
-      setTransferError(cause instanceof Error ? cause.message : "キューブ状態を確認してください。");
-    }
-  };
   
   return (
-    <div style={styles.container} className="detect-shell">
+    <div style={styles.container}>
       <h1 style={styles.title}>Cube Detection System</h1>
       <p style={styles.statusText}>{status}</p>
       
       {/* ===== メイン2カラム ===== */}
-      <div style={styles.mainLayout} className="detect-main-layout">
+      <div style={styles.mainLayout}>
         {/* ================= 左：カメラ ================= */}
-        <div style={styles.leftColumn} className="detect-left-column">
+        <div style={styles.leftColumn}>
           <div style={{ width: "100%" }}>
             <div style={styles.stepNavContainer}>
               <div style={{
@@ -357,7 +336,7 @@ export default function Home() {
           </div>
 
           {/* ===== ボタンと画像エリアの複合コンテナ ===== */}
-          <div style={styles.bottomActionArea} className="detect-bottom-actions">
+          <div style={styles.bottomActionArea}>
             <div style={styles.buttonContainer}>
               <button
                 onClick={start10SecScan}
@@ -377,14 +356,6 @@ export default function Home() {
                 {isScanning ? `Scanning (${progress}%)` : currentStep === 1 ? "Start first attempt" : "Start second attempt"}
               </button>
 
-              <button
-                onClick={openSolver}
-                disabled={isScanning || !allFacesKnown}
-                style={{ ...styles.btnMain, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", opacity: isScanning || !allFacesKnown ? 0.5 : 1, cursor: isScanning || !allFacesKnown ? "not-allowed" : "pointer" }}
-              >
-                Solverで解く →
-              </button>
-              {transferError && <p role="alert" style={{ color: "#fca5a5", fontSize: "13px", margin: 0 }}>{transferError}</p>}
               <button
                 onClick={resetAll}
                 disabled={isScanning}
@@ -409,7 +380,7 @@ export default function Home() {
         </div>
 
         {/* ================= 右：展開図 ＆ 3D切り替えエリア ================= */}
-        <div style={styles.rightColumn} className="detect-right-column">
+        <div style={styles.rightColumn}>
           {/* 🔄 表示切り替えタブ（トグル） */}
           <div style={styles.tabContainer}>
             <button onClick={() => setViewMode("net")} style={{...styles.tabButton, ...(viewMode === "net" ? styles.tabButtonActive : {})}}>
@@ -425,7 +396,7 @@ export default function Home() {
             <div style={{ width: "100%" }}>
               <h3 style={styles.netTitle}>Net of a Cube</h3>
 
-              <div style={styles.netGrid} className="detect-net-grid">
+              <div style={styles.netGrid}>
                 <div style={{ gridRow: "1", gridColumn: "2", textAlign: "center" }}>
                   <p style={styles.faceLabel}>U (WHITE)</p>
                   <CubeFaceGrid colors={faceU} faceName="U" onColorSelect={handleColorChange} />
@@ -504,7 +475,7 @@ function CubeFaceGrid({
   };
 
   return (
-    <div style={styles.faceGridWrapper} data-face={faceName}>
+    <div style={styles.faceGridWrapper}>
       {colors.map((color, index) => {
         const bg = colorMap[color] ?? "#1e293b";
         const isCenter = index === 4; // 中心タイル判定
@@ -513,7 +484,6 @@ function CubeFaceGrid({
         return (
           <div
             key={index}
-            data-sticker-index={index}
             style={{
               position: "relative", // ポップアップの基準にするため追加
               width: "22px",  // 26px -> 22px に縮小
@@ -557,7 +527,6 @@ function CubeFaceGrid({
                 {Object.keys(colorMap).filter(k => k !== "N").map((cKey) => (
                   <div
                     key={cKey}
-                    data-color={cKey}
                     onClick={() => {
                       onColorSelect(faceName, index, cKey);
                       setEditingIndex(null); // 変更したら閉じる
