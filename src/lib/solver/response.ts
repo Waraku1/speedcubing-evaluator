@@ -10,7 +10,7 @@
  *   - Next.js の NextResponse.json を薄くラップするだけ
  */
 import { NextResponse } from 'next/server'
-import { AppError, toAppError, isAppError } from './errors'
+import { AppError, toAppError } from './errors'
 import type { ApiSuccess, ApiError as ApiErrorType } from '@/types/api'
 
 /**

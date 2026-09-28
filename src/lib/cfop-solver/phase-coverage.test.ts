@@ -6,10 +6,10 @@ import {
 } from "../cube/moves";
 
 import {
-  getCrossCaseTableSize,
+  getCrossCanonicalRuleCount,
 } from "./cross";
 
-import { getTopF2LCaseTableSize } from "./f2l";
+import { getCanonicalF2LCaseCount, registeredF2LCases } from "./f2l";
 
 import {
   getOLLLookupSize,
@@ -24,12 +24,17 @@ import {
 } from "./detection";
 
 describe("CFOP finite phase coverage", () => {
-  it("contains finite protected-edge Cross actions", () => {
-    expect(getCrossCaseTableSize()).toBe(672);
+  it("contains the semantic Cross rule set", () => {
+    expect(getCrossCanonicalRuleCount()).toBe(6);
   });
 
-  it("contains the 24 normalized top-pair cases for each slot and AUF", () => {
-    expect(getTopF2LCaseTableSize()).toBe(4 * 24 * 4);
+  it("contains one canonical 41-case F2L registry", () => {
+    expect(getCanonicalF2LCaseCount()).toBe(41);
+    expect(new Set(registeredF2LCases.map((entry) => entry.id)).size).toBe(41);
+    expect(registeredF2LCases.filter((entry) => entry.category === "top-layer-pair")).toHaveLength(24);
+    expect(registeredF2LCases.filter((entry) => entry.category === "corner-in-slot")).toHaveLength(6);
+    expect(registeredF2LCases.filter((entry) => entry.category === "edge-in-slot")).toHaveLength(6);
+    expect(registeredF2LCases.filter((entry) => entry.category === "both-in-slot")).toHaveLength(5);
   });
 
   it("contains all 216 OLL orientations", () => {

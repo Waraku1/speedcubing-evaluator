@@ -15,7 +15,7 @@
  */
 import { parentPort } from 'worker_threads'
 import { loadWasm } from '@/lib/solver/wasmLoader'
-import { parseStateString, isValidCubeState } from '@/lib/cube/cube'
+import { parseCubeState, isValidCubeState } from '@/lib/cube/cube'
 
 // ── メッセージ型定義 ───────────────────────────────────────────────────────
 interface SolveRequest {
@@ -99,7 +99,7 @@ port.on('message', async (req: WorkerRequest) => {
     // ── バリデーション ─────────────────────────────────────────────────
     let cubeState
     try {
-      cubeState = parseStateString(stateString)
+      cubeState = parseCubeState(stateString)
     } catch {
       port.postMessage({
         type: 'error', id,

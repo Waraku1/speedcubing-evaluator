@@ -72,13 +72,12 @@ export class AppError extends Error {
  * code プロパティの存在で判定する。
  */
 export function isAppError(err: unknown): err is AppError {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    typeof (err as Record<string, unknown>).code === 'string' &&
-    (err as Record<string, unknown>).code in ERROR_STATUS_MAP
-  )
+  if (typeof err !== 'object' || err === null || !('code' in err)) {
+    return false
+  }
+
+  const code = (err as Record<string, unknown>).code
+  return typeof code === 'string' && code in ERROR_STATUS_MAP
 }
 
 /**

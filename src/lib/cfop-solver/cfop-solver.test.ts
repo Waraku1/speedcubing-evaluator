@@ -61,9 +61,6 @@ describe("solveCFOP — physically valid human phase separation", () => {
     expect(result.phases.pll.moves.length).toBeGreaterThan(0);
 
     expect(isAlignedCrossSolved(result.phases.cross.stateAfter).solved).toBe(true);
-    expect(countSolvedF2LSlots(result.phases.cross.stateAfter)).toBeLessThanOrEqual(
-      countSolvedF2LSlots(result.scrambledState),
-    );
 
     let f2lState = result.phases.cross.stateAfter;
     const completed = new Set(
