@@ -1,66 +1,51 @@
-/**
- * Solver ページ E2E テスト
- *
- * 認証不要（/solver は公開ページ）
- */
-import { test, expect } from '@playwright/test'
+import { test, expect } from "@playwright/test";
+import { applyMoves, SOLVED_STATE } from "../../src/lib/cube/moves";
 
-// Solved state の stateString（54文字、URFDLB 順）
-const SOLVED_STATE_STRING = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB'
+const SCRAMBLED = applyMoves(SOLVED_STATE, ["R", "U", "F2", "L"]);
 
-test.describe('Solver ページ', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/solver')
-  })
+test.describe("CFOP Solver", () => {
+  test.beforeEach(async ({ page }) => { await page.goto("/solver"); });
 
-  test('ページタイトルが表示される', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /solver/i })).toBeVisible()
-  })
+  test("complete solve displays four phases and synchronized cube states", async ({ page }) => {
+    await expect(page.getByRole("heading", { name: "CFOP Solver" })).toBeVisible();
+    await page.getByTestId("state-string-input").fill(SCRAMBLED);
+    await page.getByRole("button", { name: /Solve/ }).click();
+    await expect(page.getByTestId("solve-result")).toBeVisible();
+    await expect(page.getByText("完成を検証済み")).toBeVisible();
+    for (const phase of ["CROSS", "F2L", "OLL", "PLL"]) await expect(page.getByText(phase, { exact: true })).toBeVisible();
+    const start = await page.locator(".state-code").textContent();
+    await page.getByTestId("next-step-button").click();
+    await expect(page.getByTestId("current-step")).not.toHaveText("開始状態");
+    expect(await page.locator(".state-code").textContent()).not.toBe(start);
+    await page.getByTestId("previous-step-button").click();
+    await expect(page.locator(".state-code")).toHaveText(SCRAMBLED);
+  });
 
-  test('CubeFaceEditor が表示される', async ({ page }) => {
-    await expect(page.getByTestId('cube-face-editor')).toBeVisible()
-  })
+  test("partial solve stops at Cross and shows the exact evaluator input", async ({ page }) => {
+    await page.getByTestId("state-string-input").fill(SCRAMBLED);
+    await page.getByLabel("部分解").check();
+    await page.getByRole("button", { name: /Solve/ }).click();
+    await expect(page.getByTestId("solve-result")).toBeVisible();
+    await expect(page.getByText(/CROSS に到達/)).toBeVisible();
+    await expect(page.getByText("PLL", { exact: true })).toHaveCount(0);
+    const moves = await page.getByTestId("moves-display").textContent();
+    await expect(page.locator(".evaluated-moves")).toHaveText(`評価対象: ${moves}`);
+  });
 
-  test('Solve ボタンをクリックするとローディングが表示される', async ({ page }) => {
-    // Solver ボタンを探してクリック
-    const solveButton = page.getByRole('button', { name: /solve/i })
-    await expect(solveButton).toBeVisible()
-    await solveButton.click()
+  test("solved and invalid input are distinct", async ({ page }) => {
+    await page.getByRole("button", { name: /Solve/ }).click();
+    await expect(page.getByText("目標達成済み · 手順なし").first()).toBeVisible();
+    await page.getByTestId("state-string-input").fill("short");
+    await page.getByRole("button", { name: /Solve/ }).click();
+    await expect(page.getByRole("alert")).toContainText("入力形式または色数");
+  });
 
-    // ローディングインジケータが表示されることを確認
-    await expect(page.getByTestId('solver-loading')).toBeVisible({ timeout: 2_000 })
-  })
-
-  test('有効な状態を入力してソルブ結果が表示される', async ({ page }) => {
-    // stateString を直接入力するフィールドがある場合
-    const stateInput = page.getByTestId('state-string-input')
-    if (await stateInput.isVisible()) {
-      await stateInput.fill(SOLVED_STATE_STRING)
-    }
-
-    const solveButton = page.getByRole('button', { name: /solve/i })
-    await solveButton.click()
-
-    // ソルブ結果の表示を待つ（API レスポンス最大 10秒）
-    await expect(page.getByTestId('solve-result')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('moves-display')).toBeVisible()
-  })
-
-  test('ステップ再生ボタンが機能する', async ({ page }) => {
-    const stateInput = page.getByTestId('state-string-input')
-    if (await stateInput.isVisible()) {
-      await stateInput.fill(SOLVED_STATE_STRING)
-    }
-
-    await page.getByRole('button', { name: /solve/i }).click()
-    await page.getByTestId('solve-result').waitFor({ timeout: 10_000 })
-
-    // 次のステップへ
-    const nextButton = page.getByTestId('next-step-button')
-    await expect(nextButton).toBeVisible()
-    const initialStep = await page.getByTestId('current-step').textContent()
-    await nextButton.click()
-    const newStep = await page.getByTestId('current-step').textContent()
-    expect(newStep).not.toBe(initialStep)
-  })
-})
+  test("mobile layout has no horizontal overflow", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByTestId("state-string-input").fill(SCRAMBLED);
+    await page.getByRole("button", { name: /Solve/ }).click();
+    await expect(page.getByTestId("solve-result")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expect(page.getByTestId("next-step-button")).toBeVisible();
+  });
+});

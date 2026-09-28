@@ -144,7 +144,7 @@ export function generateGridPoints(pose: CubePose, step: 1 | 2): Point[] {
   if (step === 1) {
     pts.push(...rotate180(top)); // U
     pts.push(...left); // R
-    pts.push(...rotate180(right));           // B
+    pts.push(...right); // B: outside-view order already
 } else {
     pts.push(...rotate180(flipvert(top)));             // D
     pts.push(...rotate180(left)); // F
