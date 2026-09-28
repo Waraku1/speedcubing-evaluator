@@ -1,8 +1,0 @@
-@media (max-width: 850px) {
-  .detect-shell { padding: 20px 12px !important; }
-  .detect-main-layout { flex-wrap: wrap !important; gap: 16px !important; }
-  .detect-left-column, .detect-right-column { width: 100% !important; min-width: 0 !important; }
-  .detect-right-column { padding: 16px 10px !important; }
-  .detect-net-grid { gap: 8px !important; }
-  .detect-bottom-actions { gap: 8px !important; }
-}
