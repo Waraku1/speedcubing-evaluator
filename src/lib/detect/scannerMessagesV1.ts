@@ -17,6 +17,17 @@ export type ScannerWorkerInboundV1 =
   | Readonly<{ type: "DISPOSE"; generation: number }>;
 
 export type ScannerWorkerOutboundV1 =
+  | Readonly<{ type: "WORKER_STARTED"; generation: number }>
+  | Readonly<{
+      type: "SESSION_CREATE_STARTED";
+      generation: number;
+      workerStartedToSessionCreateStartMs: number;
+    }>
+  | Readonly<{
+      type: "SESSION_CREATE_COMPLETED";
+      generation: number;
+      sessionCreateDurationMs: number;
+    }>
   | Readonly<{ type: "MODEL_READY"; generation: number }>
   | Readonly<{
       type: "INFERENCE_RESULT";
@@ -101,8 +112,36 @@ export function isScannerWorkerOutboundV1(
   ) {
     return false;
   }
-  if (message.type === "MODEL_READY" || message.type === "DISPOSED") {
+  if (
+    message.type === "WORKER_STARTED" ||
+    message.type === "MODEL_READY" ||
+    message.type === "DISPOSED"
+  ) {
     return hasExactKeys(message, ["type", "generation"]);
+  }
+  if (message.type === "SESSION_CREATE_STARTED") {
+    return (
+      hasExactKeys(message, [
+        "type",
+        "generation",
+        "workerStartedToSessionCreateStartMs",
+      ]) &&
+      typeof message.workerStartedToSessionCreateStartMs === "number" &&
+      Number.isFinite(message.workerStartedToSessionCreateStartMs) &&
+      message.workerStartedToSessionCreateStartMs >= 0
+    );
+  }
+  if (message.type === "SESSION_CREATE_COMPLETED") {
+    return (
+      hasExactKeys(message, [
+        "type",
+        "generation",
+        "sessionCreateDurationMs",
+      ]) &&
+      typeof message.sessionCreateDurationMs === "number" &&
+      Number.isFinite(message.sessionCreateDurationMs) &&
+      message.sessionCreateDurationMs >= 0
+    );
   }
   if (message.type === "WORKER_ERROR") {
     return (

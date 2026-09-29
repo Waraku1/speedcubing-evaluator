@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { classifyColorHSV } from "../../src/lib/detect/colorUtils";
@@ -241,6 +243,33 @@ describe("C5 scanner handoff and runtime bounds", () => {
     ).toBe(false);
     expect(
       isScannerWorkerOutboundV1({
+        type: "WORKER_STARTED",
+        generation: 1,
+      })
+    ).toBe(true);
+    expect(
+      isScannerWorkerOutboundV1({
+        type: "SESSION_CREATE_STARTED",
+        generation: 1,
+        workerStartedToSessionCreateStartMs: 12.5,
+      })
+    ).toBe(true);
+    expect(
+      isScannerWorkerOutboundV1({
+        type: "SESSION_CREATE_COMPLETED",
+        generation: 1,
+        sessionCreateDurationMs: 250,
+      })
+    ).toBe(true);
+    expect(
+      isScannerWorkerOutboundV1({
+        type: "SESSION_CREATE_COMPLETED",
+        generation: 1,
+        sessionCreateDurationMs: Number.NaN,
+      })
+    ).toBe(false);
+    expect(
+      isScannerWorkerOutboundV1({
         type: "NO_DETECTION",
         generation: 1,
         requestId: 1,
@@ -259,6 +288,28 @@ describe("C5 scanner handoff and runtime bounds", () => {
     expect(SCANNER_RUNTIME_LIMITS_V1.minimumInferenceIntervalMs).toBe(125);
     expect(1000 / SCANNER_RUNTIME_LIMITS_V1.minimumInferenceIntervalMs).toBe(8);
     expect(SCANNER_RUNTIME_LIMITS_V1.inferenceTimeoutMs).toBe(2_000);
+    expect(SCANNER_RUNTIME_LIMITS_V1.modelLoadTimeoutMs).toBe(45_000);
+  });
+
+  it("uses only the supported ORT WASM entry point and accepted session options", () => {
+    const workerSource = readFileSync(
+      new URL("../../src/lib/detect/scannerWorkerV1.ts", import.meta.url),
+      "utf8"
+    );
+    const inferenceSource = readFileSync(
+      new URL("../../src/lib/detect/visionOnnx.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(workerSource).toContain('from "onnxruntime-web/wasm"');
+    expect(inferenceSource).toContain('from "onnxruntime-web/wasm"');
+    expect(`${workerSource}\n${inferenceSource}`).not.toMatch(
+      /from ["']onnxruntime-web["']/
+    );
+    expect(workerSource).toContain('executionProviders: ["wasm"]');
+    expect(workerSource).toContain('graphOptimizationLevel: "all"');
+    expect(workerSource).toContain("ort.env.wasm.numThreads = 1");
+    expect(workerSource).toContain("ort.env.wasm.proxy = false");
   });
 
   it("SC-13 accepts only the exact reviewed, bounded handoff schema", () => {

@@ -44,6 +44,10 @@ export type ScannerRuntimeFailureV1 =
   | "VISIBILITY_LOST";
 
 export type ScannerRuntimeMetricsV1 = Readonly<{
+  workerBootstrapDurationMs: number | null;
+  workerStartedToSessionCreateStartMs: number | null;
+  sessionCreateDurationMs: number | null;
+  totalStartToModelReadyMs: number | null;
   inferenceStarted: number;
   inferenceCompleted: number;
   busySkips: number;
@@ -52,6 +56,18 @@ export type ScannerRuntimeMetricsV1 = Readonly<{
   trackStopLatencyMs: number | null;
   cleanupDurationMs: number | null;
 }>;
+
+export type ScannerInitializationDiagnosticV1 =
+  | Readonly<{ stage: "WORKER_STARTED"; workerBootstrapDurationMs: number }>
+  | Readonly<{
+      stage: "SESSION_CREATE_STARTED";
+      workerStartedToSessionCreateStartMs: number;
+    }>
+  | Readonly<{
+      stage: "SESSION_CREATE_COMPLETED";
+      sessionCreateDurationMs: number;
+    }>
+  | Readonly<{ stage: "MODEL_READY"; totalStartToModelReadyMs: number }>;
 
 export type ScannerRuntimeCallbacksV1 = Readonly<{
   onStatus: (status: ScannerRuntimeStatusV1) => void;
@@ -66,6 +82,9 @@ export type ScannerRuntimeCallbacksV1 = Readonly<{
     faces: CanonicalPoseCaptureV1<CubeDraftTokenV1>
   ) => void;
   onFailure: (failure: ScannerRuntimeFailureV1) => void;
+  onInitializationDiagnostic?: (
+    diagnostic: ScannerInitializationDiagnosticV1
+  ) => void;
   onMetrics?: (metrics: ScannerRuntimeMetricsV1) => void;
 }>;
 
@@ -90,11 +109,17 @@ export class ScannerRuntimeV1 {
   private lastInferenceStart = -Infinity;
   private callbacks: ScannerRuntimeCallbacksV1 | null = null;
   private cleanupPromise: Promise<void> | null = null;
+  private initializationStartedAt: number | null = null;
+  private workerConstructedAt: number | null = null;
   private visibilityHandler: (() => void) | null = null;
   private pageHideHandler: (() => void) | null = null;
   private metrics = this.emptyMetrics();
 
   private emptyMetrics(): {
+    workerBootstrapDurationMs: number | null;
+    workerStartedToSessionCreateStartMs: number | null;
+    sessionCreateDurationMs: number | null;
+    totalStartToModelReadyMs: number | null;
     inferenceStarted: number;
     inferenceCompleted: number;
     busySkips: number;
@@ -104,6 +129,10 @@ export class ScannerRuntimeV1 {
     cleanupDurationMs: number | null;
   } {
     return {
+      workerBootstrapDurationMs: null,
+      workerStartedToSessionCreateStartMs: null,
+      sessionCreateDurationMs: null,
+      totalStartToModelReadyMs: null,
       inferenceStarted: 0,
       inferenceCompleted: 0,
       busySkips: 0,
@@ -133,6 +162,8 @@ export class ScannerRuntimeV1 {
     this.canvas = canvas;
     this.callbacks = callbacks;
     this.metrics = this.emptyMetrics();
+    this.initializationStartedAt = performance.now();
+    this.workerConstructedAt = null;
 
     if (
       !globalThis.isSecureContext ||
@@ -187,6 +218,7 @@ export class ScannerRuntimeV1 {
     callbacks.onStatus("MODEL_LOADING");
     let worker: Worker;
     try {
+      this.workerConstructedAt = performance.now();
       worker = new Worker(new URL("./scannerWorkerV1.ts", import.meta.url), {
         type: "module",
         name: "hca-cube-scanner-v1",
@@ -364,7 +396,46 @@ export class ScannerRuntimeV1 {
     const message: ScannerWorkerOutboundV1 = event.data;
     if (message.generation !== this.generation) return;
 
+    if (message.type === "WORKER_STARTED") {
+      const durationMs =
+        this.workerConstructedAt === null
+          ? 0
+          : performance.now() - this.workerConstructedAt;
+      this.metrics.workerBootstrapDurationMs = durationMs;
+      this.callbacks?.onInitializationDiagnostic?.({
+        stage: "WORKER_STARTED",
+        workerBootstrapDurationMs: durationMs,
+      });
+      return;
+    }
+    if (message.type === "SESSION_CREATE_STARTED") {
+      this.metrics.workerStartedToSessionCreateStartMs =
+        message.workerStartedToSessionCreateStartMs;
+      this.callbacks?.onInitializationDiagnostic?.({
+        stage: "SESSION_CREATE_STARTED",
+        workerStartedToSessionCreateStartMs:
+          message.workerStartedToSessionCreateStartMs,
+      });
+      return;
+    }
+    if (message.type === "SESSION_CREATE_COMPLETED") {
+      this.metrics.sessionCreateDurationMs = message.sessionCreateDurationMs;
+      this.callbacks?.onInitializationDiagnostic?.({
+        stage: "SESSION_CREATE_COMPLETED",
+        sessionCreateDurationMs: message.sessionCreateDurationMs,
+      });
+      return;
+    }
     if (message.type === "MODEL_READY") {
+      const durationMs =
+        this.initializationStartedAt === null
+          ? 0
+          : performance.now() - this.initializationStartedAt;
+      this.metrics.totalStartToModelReadyMs = durationMs;
+      this.callbacks?.onInitializationDiagnostic?.({
+        stage: "MODEL_READY",
+        totalStartToModelReadyMs: durationMs,
+      });
       this.clearModelTimer();
       this.modelReady = true;
       this.callbacks?.onStatus("READY");
@@ -456,6 +527,8 @@ export class ScannerRuntimeV1 {
     this.overlayPoints = [];
     this.modelReady = false;
     this.inFlight = false;
+    this.initializationStartedAt = null;
+    this.workerConstructedAt = null;
     this.clearModelTimer();
     this.clearInferenceTimer();
 

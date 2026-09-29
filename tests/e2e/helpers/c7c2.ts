@@ -217,10 +217,20 @@ export async function installScannerStateMock(
         const generation = message.generation as number;
         if (message.type === "LOAD_MODEL") {
           if (mode !== "MODEL_PENDING") {
-            setTimeout(
-              () => this.emit({ type: "MODEL_READY", generation }),
-              0
-            );
+            this.emit({ type: "WORKER_STARTED", generation });
+            this.emit({
+              type: "SESSION_CREATE_STARTED",
+              generation,
+              workerStartedToSessionCreateStartMs: 4,
+            });
+            setTimeout(() => {
+              this.emit({
+                type: "SESSION_CREATE_COMPLETED",
+                generation,
+                sessionCreateDurationMs: 8,
+              });
+              this.emit({ type: "MODEL_READY", generation });
+            }, 0);
           }
           return;
         }

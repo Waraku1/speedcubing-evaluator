@@ -1,4 +1,4 @@
-import * as ort from "onnxruntime-web";
+import * as ort from "onnxruntime-web/wasm";
 import { classifyColorHSV, rgbToHsv } from "./colorUtils";
 import type { ScannerPointV1 } from "./scannerMessagesV1";
 import type { CubeDraftTokenV1 } from "../ui/cubeDraftV1";

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import * as ort from "onnxruntime-web";
+import * as ort from "onnxruntime-web/wasm";
 import { runScannerInferenceV1 } from "./visionOnnx";
 import {
   isScannerWorkerInboundV1,
@@ -11,6 +11,7 @@ import {
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const canvas = new OffscreenCanvas(640, 640);
 const context = canvas.getContext("2d", { willReadFrequently: true });
+const workerStartedAt = performance.now();
 let session: ort.InferenceSession | null = null;
 let activeGeneration = -1;
 let queue = Promise.resolve();
@@ -29,17 +30,31 @@ async function handleMessage(message: ScannerWorkerInboundV1): Promise<void> {
   if (message.type === "LOAD_MODEL") {
     activeGeneration = message.generation;
     try {
+      send({ type: "WORKER_STARTED", generation: message.generation });
       await releaseSession();
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.proxy = false;
+      const sessionCreateStartedAt = performance.now();
+      send({
+        type: "SESSION_CREATE_STARTED",
+        generation: message.generation,
+        workerStartedToSessionCreateStartMs:
+          sessionCreateStartedAt - workerStartedAt,
+      });
       const loaded = await ort.InferenceSession.create(message.modelUrl, {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
+      const sessionCreateDurationMs = performance.now() - sessionCreateStartedAt;
       if (activeGeneration !== message.generation) {
         await loaded.release();
         return;
       }
+      send({
+        type: "SESSION_CREATE_COMPLETED",
+        generation: message.generation,
+        sessionCreateDurationMs,
+      });
       session = loaded;
       send({ type: "MODEL_READY", generation: message.generation });
     } catch {

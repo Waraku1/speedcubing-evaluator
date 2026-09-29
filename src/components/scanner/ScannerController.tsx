@@ -160,6 +160,12 @@ export function ScannerController() {
             : FAILURE_MESSAGES[failure]
         );
       },
+      onInitializationDiagnostic: (diagnostic) => {
+        console.info(
+          "AES_SCANNER_INIT_DIAGNOSTIC",
+          JSON.stringify(diagnostic)
+        );
+      },
     });
   }
 

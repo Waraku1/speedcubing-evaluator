@@ -26,6 +26,7 @@ type ScannerEvidence = {
 };
 
 type ScannerMockOptions = Readonly<{
+  accelerateModelTimeout?: boolean;
   denyCamera?: boolean;
   delayDispose?: boolean;
   storageFailure?: boolean;
@@ -134,7 +135,11 @@ async function installScannerMocks(
                 handler(...args);
               }
             : handler;
-        timer = nativeSetTimeout(wrappedHandler, timeout);
+        const effectiveTimeout =
+          mockOptions.accelerateModelTimeout && timeout === 45_000
+            ? 50
+            : timeout;
+        timer = nativeSetTimeout(wrappedHandler, effectiveTimeout);
         if (scannerTimerDelays.has(timeout)) {
           scannerTimers.add(timer);
           evidence.activeScannerTimers = scannerTimers.size;
@@ -313,17 +318,28 @@ async function installScannerMocks(
         const message = value as Record<string, unknown>;
         const generation = message.generation as number;
         if (message.type === "LOAD_MODEL") {
+          this.emit({ type: "WORKER_STARTED", generation });
+          this.emit({
+            type: "SESSION_CREATE_STARTED",
+            generation,
+            workerStartedToSessionCreateStartMs: 4,
+          });
           if (mockOptions.workerMode === "hold-model") return;
           nativeSetTimeout(() => {
-            this.emit(
-              mockOptions.workerMode === "model-failure"
-                ? {
-                    type: "WORKER_ERROR",
-                    generation,
-                    code: "MODEL_LOAD_FAILED",
-                  }
-                : { type: "MODEL_READY", generation }
-            );
+            if (mockOptions.workerMode === "model-failure") {
+              this.emit({
+                type: "WORKER_ERROR",
+                generation,
+                code: "MODEL_LOAD_FAILED",
+              });
+              return;
+            }
+            this.emit({
+              type: "SESSION_CREATE_COMPLETED",
+              generation,
+              sessionCreateDurationMs: 8,
+            });
+            this.emit({ type: "MODEL_READY", generation });
           }, 0);
           return;
         }
@@ -610,6 +626,39 @@ test.describe("C5R scanner acceptance contract", () => {
     await expect(page.getByRole("heading", { name: "Enter the cube state" })).toBeVisible();
   });
 
+  test("SC-03 Model timeout releases resources and retry starts a fresh worker", async ({
+    page,
+  }) => {
+    await installScannerMocks(page, {
+      accelerateModelTimeout: true,
+      workerMode: "hold-model",
+    });
+    await page.goto("/detect");
+    const baseline = await listenerBaseline(page);
+
+    await page.getByRole("button", { name: "Start camera" }).click();
+    await expect(page.locator('[data-scanner-state="ERROR"]')).toBeVisible();
+    await expect(page.getByText(/did not become ready within 45 seconds/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Use manual cube entry" })).toBeVisible();
+    await expectScannerReleased(page, baseline);
+    expect(await scannerEvidence(page)).toMatchObject({
+      getUserMediaCalls: 1,
+      workerConstructions: 1,
+      workerTerminations: 1,
+      inferenceStarts: [],
+    });
+
+    await page.getByRole("button", { name: "Try camera again" }).click();
+    await expect(page.locator('[data-scanner-state="ERROR"]')).toBeVisible();
+    await expectScannerReleased(page, baseline);
+    expect(await scannerEvidence(page)).toMatchObject({
+      getUserMediaCalls: 2,
+      workerConstructions: 2,
+      workerTerminations: 2,
+      inferenceStarts: [],
+    });
+  });
+
   test("SC-14 Manual fallback remains visible after inference failure", async ({
     page,
   }) => {
@@ -885,7 +934,13 @@ test.describe("C5R scanner acceptance contract", () => {
     await installCameraOnlyMock(page);
     const requestedUrls: string[] = [];
     const scannerRequests: Request[] = [];
+    const initializationDiagnostics: string[] = [];
     let afterStart = false;
+    page.on("console", (message) => {
+      if (message.text().startsWith("AES_SCANNER_INIT_DIAGNOSTIC")) {
+        initializationDiagnostics.push(message.text());
+      }
+    });
     page.on("request", (request) => {
       requestedUrls.push(request.url());
       if (afterStart && request.url().startsWith("http")) scannerRequests.push(request);
@@ -905,6 +960,14 @@ test.describe("C5R scanner acceptance contract", () => {
       "/models/cube_pose.284726d2638cc8ba.onnx"
     );
     expect(requestedUrls.some((url) => /\.wasm(?:\?|$)/i.test(url))).toBe(true);
+    expect(initializationDiagnostics.join("\n")).toContain("WORKER_STARTED");
+    expect(initializationDiagnostics.join("\n")).toContain(
+      "SESSION_CREATE_STARTED"
+    );
+    expect(initializationDiagnostics.join("\n")).toContain(
+      "SESSION_CREATE_COMPLETED"
+    );
+    expect(initializationDiagnostics.join("\n")).toContain("MODEL_READY");
     expect(readyDurationMs).toBeLessThanOrEqual(35_000);
     const transferSizes = await Promise.all(
       scannerRequests.map((request) => request.sizes())
