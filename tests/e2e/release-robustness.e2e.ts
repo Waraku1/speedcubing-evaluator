@@ -321,7 +321,7 @@ test.describe("C7-B release robustness", () => {
     await retry.click();
     await expect(
       page.getByRole("heading", {
-        name: "HCA Speedcubing Evaluator",
+        name: "Algorithm Evaluator for Speedcubing",
         level: 1,
       })
     ).toBeVisible();
@@ -375,7 +375,7 @@ test.describe("C7-B release robustness", () => {
     expect(root?.status()).toBe(200);
     await expect(
       page.getByRole("heading", {
-        name: "HCA Speedcubing Evaluator",
+        name: "Algorithm Evaluator for Speedcubing",
         level: 1,
       })
     ).toBeVisible();

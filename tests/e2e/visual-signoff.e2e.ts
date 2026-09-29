@@ -30,6 +30,7 @@ const OUTPUT_DIRECTORY = path.resolve(
   "artifacts/visual-signoff/c7-c2"
 );
 const VIEWPORTS = [
+  { label: "320x800", width: 320, height: 800 },
   { label: "360x800", width: 360, height: 800 },
   { label: "768x1024", width: 768, height: 1024 },
   { label: "1440x900", width: 1440, height: 900 },
@@ -257,7 +258,7 @@ test("captures the indexed C7-C2 visual sign-off matrix", async ({ browser }) =>
     }
   }
 
-  expect(evidence).toHaveLength(48);
+  expect(evidence).toHaveLength(64);
   await writeFile(
     path.join(OUTPUT_DIRECTORY, "manifest.json"),
     `${JSON.stringify(

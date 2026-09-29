@@ -10,7 +10,21 @@ export async function WorkbenchHeader() {
       <div className={styles.headerInner}>
         <div>
           <p className={styles.eyebrow}>Manual evaluator workbench</p>
-          <h1 className={styles.pageTitle}>HCA Speedcubing Evaluator</h1>
+          <h1
+            aria-label="Algorithm Evaluator for Speedcubing"
+            className={styles.pageTitle}
+          >
+            <span aria-hidden="true" data-product-name="full">
+              Algorithm Evaluator for Speedcubing (AES)
+            </span>
+            <span
+              aria-hidden="true"
+              className={styles.compactProductName}
+              data-product-name="compact"
+            >
+              AES
+            </span>
+          </h1>
         </div>
         <div className={styles.headerAside}>
           <AccountControl authUser={authUser} />

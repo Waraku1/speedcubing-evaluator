@@ -43,6 +43,12 @@ test.describe("C7-C2 automated accessibility closure", () => {
   test("audits the optional account control", async ({ page }) => {
     await page.goto("/");
     await expect(
+      page.getByRole("heading", {
+        name: "Algorithm Evaluator for Speedcubing",
+        level: 1,
+      })
+    ).toBeVisible();
+    await expect(
       page.getByRole("button", { name: "Sign in to save analyses" })
     ).toBeVisible();
     await expectNoWcagViolations(page, "optional account control");
@@ -414,6 +420,21 @@ test.describe("C7-C2 automated accessibility closure", () => {
     ]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
+      const fullProductName = page.locator('[data-product-name="full"]');
+      const compactProductName = page.locator('[data-product-name="compact"]');
+      if (viewport.width < 480) {
+        await expect(fullProductName).toBeHidden();
+        await expect(compactProductName).toBeVisible();
+      } else {
+        await expect(fullProductName).toBeVisible();
+        await expect(compactProductName).toBeHidden();
+      }
+      await expect(
+        page.getByRole("heading", {
+          name: "Algorithm Evaluator for Speedcubing",
+          level: 1,
+        })
+      ).toBeVisible();
       await runFixtureEvaluation(page);
       await page
         .getByRole("button", { name: "Show Trace Level 2 identifiers" })

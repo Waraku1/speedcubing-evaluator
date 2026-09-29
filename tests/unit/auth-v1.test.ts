@@ -19,7 +19,7 @@ const COMPLETE_ENVIRONMENT = {
   GITHUB_ID: "github-client-id",
   GITHUB_SECRET: "github-client-secret",
   NEXTAUTH_SECRET: "next-auth-secret-with-sufficient-entropy",
-  NEXTAUTH_URL: "https://speedcubing-evaluator.vercel.app",
+  NEXTAUTH_URL: "https://aes.example",
 } as const;
 
 describe("Auth V1 environment boundary", () => {
@@ -37,9 +37,9 @@ describe("Auth V1 environment boundary", () => {
       "READY"
     );
     for (const nextAuthUrl of [
-      "http://speedcubing-evaluator.vercel.app",
-      "https://speedcubing-evaluator.vercel.app/auth",
-      "https://speedcubing-evaluator.vercel.app?wildcard=true",
+      "http://aes.example",
+      "https://aes.example/auth",
+      "https://aes.example?wildcard=true",
       "not-a-url",
     ]) {
       const result = resolveAuthEnvironmentV1(
@@ -122,13 +122,13 @@ describe("Auth V1 NextAuth configuration", () => {
     expect(options.secret).toBe(COMPLETE_ENVIRONMENT.NEXTAUTH_SECRET);
     expect(
       safeAuthRedirectV1("/saved", COMPLETE_ENVIRONMENT.NEXTAUTH_URL)
-    ).toBe("https://speedcubing-evaluator.vercel.app/saved");
+    ).toBe("https://aes.example/saved");
     expect(
       safeAuthRedirectV1(
         "https://attacker.example/steal",
         COMPLETE_ENVIRONMENT.NEXTAUTH_URL
       )
-    ).toBe("https://speedcubing-evaluator.vercel.app/");
+    ).toBe("https://aes.example/");
   });
 
   it("renders bounded signed-out and signed-in account controls", () => {

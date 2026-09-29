@@ -4,7 +4,7 @@ import { ScannerController } from "../../components/scanner/ScannerController";
 import styles from "../../components/scanner/scanner.module.css";
 
 export const metadata: Metadata = {
-  title: "Optional cube scanner · HCA Speedcubing Evaluator",
+  title: "Optional cube scanner · AES",
   description: "Review a local two-pose camera draft before manual confirmation.",
 };
 

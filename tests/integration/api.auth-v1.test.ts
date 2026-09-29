@@ -11,7 +11,7 @@ describe("Auth V1 App Router boundary", () => {
   it("fails closed without exposing configuration details", async () => {
     const handler = createUnavailableAuthHandlerV1();
     const response = await handler(
-      new Request("https://speedcubing-evaluator.vercel.app/api/auth/session")
+      new Request("https://aes.example/api/auth/session")
     );
     const payload = await response.json();
 

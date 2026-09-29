@@ -220,8 +220,12 @@ test.describe("C4 manual evaluator workbench", () => {
 
   test("C4-11..13 replaces starter UI with 48 explicit editable unknowns", async ({ page }) => {
     await expect(
-      page.getByRole("heading", { name: "HCA Speedcubing Evaluator", level: 1 })
+      page.getByRole("heading", {
+        name: "Algorithm Evaluator for Speedcubing",
+        level: 1,
+      })
     ).toBeVisible();
+    await expect(page).toHaveTitle("Algorithm Evaluator for Speedcubing");
     await expect(page.getByText("Create Next App")).toHaveCount(0);
     await expect(page.getByText("Deploy Now")).toHaveCount(0);
     await expect(page.locator('[data-sticker-editable="true"]')).toHaveCount(48);

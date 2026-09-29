@@ -3,8 +3,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HCA Speedcubing Evaluator",
-  description: "Human-state Demand analysis for verified 3x3x3 cube solutions.",
+  title: "Algorithm Evaluator for Speedcubing",
+  applicationName: "AES",
+  description:
+    "Evaluate verified 3x3x3 cube solutions with Domain Demand analysis and human-style CFOP details.",
 };
 
 export default function RootLayout({

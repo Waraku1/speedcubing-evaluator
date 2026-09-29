@@ -31,6 +31,10 @@
   letter-spacing: -0.02em;
 }
 
+.compactProductName {
+  display: none;
+}
+
 .headerAside {
   display: grid;
   max-width: 560px;
@@ -287,6 +291,14 @@
 
   .pageTitle {
     font-size: 24px;
+  }
+
+  .pageTitle [data-product-name="full"] {
+    display: none;
+  }
+
+  .compactProductName {
+    display: inline;
   }
 
   .inputPanel,
