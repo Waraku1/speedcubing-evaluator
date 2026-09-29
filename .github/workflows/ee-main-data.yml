@@ -1,0 +1,60 @@
+name: EE EO SRS confirmatory main dataset
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ee/data-freeze-v4.0.0
+    paths:
+      - "research/ee-experiment/DATA_FREEZE_v4.md"
+
+concurrency:
+  group: ee-eo-srs-main-v4
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EE_SOURCE_COMMIT_SHA: ${{ github.sha }}
+      EE_STUDY_SEED: EE-2026-EO-SRS-MAIN-01
+      EE_SAMPLE_COUNT: "20480"
+      EE_BOOTSTRAP_COUNT: "10000"
+      EE_BOOTSTRAP_SEED: EE-2026-EO-SRS-BOOTSTRAP-01
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate EE generator unit tests
+        run: pnpm exec vitest run tests/unit/ee-experiment-features.test.ts tests/unit/ee-random-state.test.ts
+
+      - name: Type-check EE experiment dependency graph
+        run: pnpm exec tsc -p research/ee-experiment/tsconfig.json
+
+      - name: Generate 20480 direct uniform random states
+        run: pnpm exec tsx scripts/ee-experiment/run-srs-eo.ts --samples "$EE_SAMPLE_COUNT" --seed "$EE_STUDY_SEED" --out research/ee-experiment/output/main-eo-srs-20480.csv
+
+      - name: Independently audit direct-random dataset
+        run: python3 scripts/ee-experiment/audit-srs-eo.py --csv research/ee-experiment/output/main-eo-srs-20480.csv --manifest research/ee-experiment/output/main-eo-srs-20480.manifest.json --expected-samples "$EE_SAMPLE_COUNT" --out research/ee-experiment/output/main-eo-srs-20480.audit.json
+
+      - name: Run frozen eta-squared analysis
+        run: python3 scripts/ee-experiment/analyze-srs-eo.py --csv research/ee-experiment/output/main-eo-srs-20480.csv --bootstrap "$EE_BOOTSTRAP_COUNT" --bootstrap-seed "$EE_BOOTSTRAP_SEED" --out research/ee-experiment/output/main-eo-srs-20480.analysis.json
+
+      - name: Upload immutable v4 confirmatory artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ee-eo-srs-main-v4-20480
+          retention-days: 90
+          path: |
+            research/ee-experiment/output/main-eo-srs-20480.csv
+            research/ee-experiment/output/main-eo-srs-20480.manifest.json
+            research/ee-experiment/output/main-eo-srs-20480.audit.json
+            research/ee-experiment/output/main-eo-srs-20480.analysis.json
