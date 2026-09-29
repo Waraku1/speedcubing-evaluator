@@ -3,12 +3,14 @@ import { forwardRef } from "react";
 import type { UiEvaluateResultV1 } from "../../lib/ui/evaluateUiTypesV1";
 
 import { DemandResults } from "./DemandResults";
+import { HumanStyleSolutionPanel } from "./HumanStyleSolutionPanel";
 import { TraceExplorer } from "./TraceExplorer";
 import { UnavailableStagesPanel } from "./UnavailableStagesPanel";
 import { VerifiedSolutionPanel } from "./VerifiedSolutionPanel";
 import styles from "./results.module.css";
 
 type EvaluationResultPanelProps = Readonly<{
+  facelets: string;
   result: UiEvaluateResultV1;
   traceExpanded: boolean;
   tracePage: number;
@@ -24,6 +26,7 @@ export const EvaluationResultPanel = forwardRef<
 >(function EvaluationResultPanel(
   {
     result,
+    facelets,
     traceExpanded,
     tracePage,
     selectedTraceRecordId,
@@ -62,6 +65,7 @@ export const EvaluationResultPanel = forwardRef<
         solution={result.solution}
         solverDurationMs={result.timings.solverDurationMs}
       />
+      <HumanStyleSolutionPanel facelets={facelets} />
       <DemandResults demand={result.demand} warnings={result.warnings} />
       <UnavailableStagesPanel availability={result.availability} />
       <TraceExplorer

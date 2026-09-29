@@ -677,7 +677,13 @@ test.describe("C4 manual evaluator workbench", () => {
     expect(Math.max(...headings.map(({ x }) => x)) - Math.min(...headings.map(({ x }) => x))).toBeLessThan(8);
 
     const sectionOrder = await Promise.all(
-      ["Verified solution", "Domain Demand", "Downstream availability", "Trace and provenance"].map(
+      [
+        "Verified solution",
+        "Human-style CFOP",
+        "Domain Demand",
+        "Downstream availability",
+        "Trace and provenance",
+      ].map(
         async (name) =>
           (await page.getByRole("region", { name }).boundingBox())?.y ?? -1
       )
@@ -694,6 +700,10 @@ test.describe("C4 manual evaluator workbench", () => {
     await page.keyboard.press("Tab");
     await expect(
       page.getByRole("button", { name: "Show solution technical details" })
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Generate CFOP solution" })
     ).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("button", { name: "Show T1 provenance" })).toBeFocused();

@@ -60,10 +60,7 @@ export type PhaseResult = {
   stateAfter: CubeState;
 };
 
-export type CFOPSolveResult = {
-  scramble: Move[];
-  scrambledState: CubeState;
-
+export type CFOPPipelineResult = {
   cross: CrossResult;
   f2l: F2LResult;
   oll: OLLResult;
@@ -86,6 +83,19 @@ export type CFOPSolveResult = {
   solvedState: CubeState;
   stateAfter: CubeState;
   progress: ReturnType<typeof getCFOPProgress>;
+};
+
+export type CFOPSolveResult = CFOPPipelineResult & {
+  scramble: Move[];
+  scrambledState: CubeState;
+};
+
+/**
+ * A CFOP result produced directly from a facelet state. No scramble or cube
+ * history is inferred by this contract.
+ */
+export type CFOPStateSolveResult = CFOPPipelineResult & {
+  inputState: CubeState;
 };
 
 export type SolveResult = CFOPSolveResult;
@@ -321,14 +331,11 @@ function assertPLLPhase(before: CubeState, after: CubeState): void {
   }
 }
 
-export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
-  const scrambleMoves = validateMoveArray(scramble, "scramble");
-  const scrambledState = applyMoves(SOLVED_STATE, scrambleMoves);
-
-  const cross = solveCross(scrambledState);
-  const crossPhase = makePhase("cross", scrambledState, cross.moves);
+function solveCFOPStatePipeline(inputState: CubeState): CFOPPipelineResult {
+  const cross = solveCross(inputState);
+  const crossPhase = makePhase("cross", inputState, cross.moves);
   assertSameState(crossPhase.stateAfter, cross.stateAfter, "Cross");
-  assertCrossPhase(scrambledState, crossPhase.stateAfter);
+  assertCrossPhase(inputState, crossPhase.stateAfter);
 
   const f2l = solveF2L(crossPhase.stateAfter);
   const f2lBasePhase = makePhase("f2l", crossPhase.stateAfter, f2l.moves);
@@ -352,7 +359,7 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
     ...pll.moves,
   ];
 
-  const solvedState = applyMoves(scrambledState, solution);
+  const solvedState = applyMoves(inputState, solution);
   if (solvedState !== SOLVED_STATE) {
     throw new Error(`[cfop-solver] complete solution did not solve the cube`);
   }
@@ -364,9 +371,6 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
   };
 
   return {
-    scramble: scrambleMoves,
-    scrambledState,
-
     cross,
     f2l,
     oll,
@@ -389,12 +393,37 @@ export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
   };
 }
 
+export function solveCFOP(scramble: readonly Move[]): CFOPSolveResult {
+  const scrambleMoves = validateMoveArray(scramble, "scramble");
+  const scrambledState = applyMoves(SOLVED_STATE, scrambleMoves);
+
+  return {
+    scramble: scrambleMoves,
+    scrambledState,
+    ...solveCFOPStatePipeline(scrambledState),
+  };
+}
+
+export function solveCFOPFromState(inputState: CubeState): CFOPStateSolveResult {
+  if (typeof inputState !== "string" || inputState.length !== 54) {
+    throw new TypeError("[cfop-solver] inputState must contain 54 facelets");
+  }
+
+  return {
+    inputState,
+    ...solveCFOPStatePipeline(inputState),
+  };
+}
+
 export function solveCFOPFromString(scramble: string): CFOPSolveResult {
   return solveCFOP(parseMoveString(scramble));
 }
 
 
-export function verifySolveResult(result: CFOPSolveResult): boolean {
+function verifyPipelineResult(
+  result: CFOPPipelineResult,
+  inputState: CubeState,
+): boolean {
   try {
     const expectedSolution: Move[] = [
       ...result.phases.cross.moves,
@@ -415,19 +444,14 @@ export function verifySolveResult(result: CFOPSolveResult): boolean {
       return false;
     }
 
-    const expectedScrambledState = applyMoves(SOLVED_STATE, result.scramble);
-    if (expectedScrambledState !== result.scrambledState) {
-      return false;
-    }
-
     const crossState = applyMoves(
-      result.scrambledState,
+      inputState,
       result.phases.cross.moves,
     );
 
     if (crossState !== result.phases.cross.stateAfter) return false;
-    if (result.phases.cross.stateBefore !== result.scrambledState) return false;
-    assertCrossPhase(result.scrambledState, crossState);
+    if (result.phases.cross.stateBefore !== inputState) return false;
+    assertCrossPhase(inputState, crossState);
 
     const f2lState = applyMoves(crossState, result.phases.f2l.moves);
     if (f2lState !== result.phases.f2l.stateAfter) return false;
@@ -444,7 +468,7 @@ export function verifySolveResult(result: CFOPSolveResult): boolean {
     if (result.phases.pll.stateBefore !== ollState) return false;
     assertPLLPhase(ollState, pllState);
 
-    const finalState = applyMoves(result.scrambledState, result.solution);
+    const finalState = applyMoves(inputState, result.solution);
 
     return (
       finalState === SOLVED_STATE &&
@@ -455,6 +479,23 @@ export function verifySolveResult(result: CFOPSolveResult): boolean {
   } catch {
     return false;
   }
+}
+
+export function verifySolveResult(result: CFOPSolveResult): boolean {
+  try {
+    const expectedScrambledState = applyMoves(SOLVED_STATE, result.scramble);
+    if (expectedScrambledState !== result.scrambledState) {
+      return false;
+    }
+
+    return verifyPipelineResult(result, result.scrambledState);
+  } catch {
+    return false;
+  }
+}
+
+export function verifyStateSolveResult(result: CFOPStateSolveResult): boolean {
+  return verifyPipelineResult(result, result.inputState);
 }
 
 export function formatMoves(moves: readonly Move[]): string {

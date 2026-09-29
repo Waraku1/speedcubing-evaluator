@@ -422,6 +422,76 @@
   margin-top: 12px;
 }
 
+.cfopActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cfopResult {
+  margin-top: 16px;
+}
+
+.cfopResult > .compactMetrics {
+  margin-top: 12px;
+}
+
+.cfopPhaseList {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.cfopPhase {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.cfopPhase .moveList {
+  margin-bottom: 10px;
+}
+
+.emptyPhase,
+.phaseMetrics {
+  margin: 10px 0 0;
+}
+
+.phaseMetrics {
+  color: var(--ui-muted);
+  font-weight: 700;
+}
+
+.cfopDetails {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.cfopDetails summary {
+  min-height: 44px;
+  padding: 11px 0;
+  color: var(--ui-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cfopError {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d8a4a4;
+  border-radius: var(--radius-control);
+  background: #fff5f5;
+}
+
+.cfopError p,
+.cfopError h4 {
+  margin: 0 0 8px;
+}
+
 @media (max-width: 767px) {
   .requestMetadata,
   .defaultFields,
@@ -456,6 +526,10 @@
   }
 
   .pagination .inlineButton {
+    width: 100%;
+  }
+
+  .cfopActions .inlineButton {
     width: 100%;
   }
 }

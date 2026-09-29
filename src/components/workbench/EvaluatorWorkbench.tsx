@@ -334,6 +334,7 @@ export function EvaluatorWorkbench() {
 
       {state.phase === "SUCCESS" && state.result !== null ? (
         <EvaluationResultPanel
+          facelets={serializeCubeDraftV1(state.draft)}
           onSelectTraceRecord={(recordId) =>
             dispatch({ type: "SELECT_TRACE_RECORD", recordId })
           }
