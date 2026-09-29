@@ -18,7 +18,7 @@ importers:
         specifier: 16.1.7
         version: 16.1.7(@babel/core@7.29.0)(@playwright/test@1.59.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       next-auth:
-        specifier: ^4.24.15
+        specifier: 4.24.15
         version: 4.24.15(next@16.1.7(@babel/core@7.29.0)(@playwright/test@1.59.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       onnxruntime-web:
         specifier: ^1.27.0

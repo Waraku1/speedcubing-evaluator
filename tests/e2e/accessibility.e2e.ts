@@ -40,6 +40,14 @@ async function withScannerState(
 }
 
 test.describe("C7-C2 automated accessibility closure", () => {
+  test("audits the optional account control", async ({ page }) => {
+    await page.goto("/");
+    await expect(
+      page.getByRole("button", { name: "Sign in to save analyses" })
+    ).toBeVisible();
+    await expectNoWcagViolations(page, "optional account control");
+  });
+
   test("audits empty, invalid, READY, loading, result, trace, and API-error states", async ({
     page,
   }) => {
@@ -454,6 +462,7 @@ test.describe("C7-C2 automated accessibility closure", () => {
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
+    await expect(page.locator('[data-auth-state="signed-out"]')).toBeVisible();
     const motion = await page.locator("*").evaluateAll((elements) =>
       elements.map((element) => {
         const style = getComputedStyle(element);

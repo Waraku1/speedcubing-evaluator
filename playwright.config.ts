@@ -9,7 +9,8 @@ export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
   expect: { timeout: 5_000 },
-  fullyParallel: false, // E2E は逐次実行（DBの状態を共有するため）
+  fullyParallel: false,
+  workers: 1, // E2E は逐次実行（状態・性能証跡の競合を避けるため）
 
   reporter: [
     ['html', { outputFolder: 'playwright-report' }],

@@ -31,8 +31,13 @@
   letter-spacing: -0.02em;
 }
 
-.releaseNote {
+.headerAside {
+  display: grid;
   max-width: 560px;
+  gap: 12px;
+}
+
+.releaseNote {
   padding-left: 16px;
   border-left: 3px solid var(--ui-accent);
   color: var(--ui-muted);
@@ -268,6 +273,10 @@
 
   .releaseNote {
     margin-top: 16px;
+  }
+
+  .headerAside {
+    max-width: none;
   }
 }
 

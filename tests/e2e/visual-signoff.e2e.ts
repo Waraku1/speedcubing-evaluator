@@ -125,6 +125,10 @@ async function workbenchPage(
     }
   }
 
+  await expect(
+    page.locator('[data-auth-state="signed-out"], [data-auth-state="signed-in"]')
+  ).toBeVisible();
+
   return { context, page };
 }
 

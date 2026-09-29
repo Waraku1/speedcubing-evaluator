@@ -1,6 +1,8 @@
 import { EvaluatorWorkbench } from "../components/workbench/EvaluatorWorkbench";
 import { WorkbenchHeader } from "../components/workbench/WorkbenchHeader";
 
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   return (
     <>
