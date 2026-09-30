@@ -54,6 +54,14 @@ test.describe("C7-C2 automated accessibility closure", () => {
     await expectNoWcagViolations(page, "optional account control");
   });
 
+  test("audits the signed-out saved-analysis boundary", async ({ page }) => {
+    await page.goto("/saved");
+    await expect(
+      page.getByRole("heading", { name: "Sign in to view saved analyses" })
+    ).toBeVisible();
+    await expectNoWcagViolations(page, "signed-out saved analyses");
+  });
+
   test("audits empty, invalid, READY, loading, result, trace, and API-error states", async ({
     page,
   }) => {

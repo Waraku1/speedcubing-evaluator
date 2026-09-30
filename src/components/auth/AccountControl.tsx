@@ -8,7 +8,8 @@ import styles from "./auth.module.css";
 
 export function AccountControl({
   authUser,
-}: Readonly<{ authUser: AuthUserV1 | null }>) {
+  callbackUrl = "/",
+}: Readonly<{ authUser: AuthUserV1 | null; callbackUrl?: string }>) {
   const [pending, setPending] = useState<"SIGN_IN" | "SIGN_OUT" | null>(null);
 
   if (authUser === null) {
@@ -19,7 +20,7 @@ export function AccountControl({
           disabled={pending !== null}
           onClick={() => {
             setPending("SIGN_IN");
-            void signIn("github", { callbackUrl: "/" }).finally(() => setPending(null));
+            void signIn("github", { callbackUrl }).finally(() => setPending(null));
           }}
           type="button"
         >
@@ -44,7 +45,7 @@ export function AccountControl({
         disabled={pending !== null}
         onClick={() => {
           setPending("SIGN_OUT");
-          void signOut({ callbackUrl: "/" }).finally(() => setPending(null));
+          void signOut({ callbackUrl }).finally(() => setPending(null));
         }}
         type="button"
       >

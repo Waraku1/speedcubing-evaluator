@@ -1,10 +1,12 @@
+import Link from "next/link";
+
 import { AccountControl } from "../auth/AccountControl";
-import { getAuthUserV1 } from "../../lib/auth/getAuthUserV1";
+import type { AuthUserV1 } from "../../lib/auth/authV1";
 import styles from "./workbench.module.css";
 
-export async function WorkbenchHeader() {
-  const authUser = await getAuthUserV1();
-
+export function WorkbenchHeader({
+  authUser,
+}: Readonly<{ authUser: AuthUserV1 | null }>) {
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
@@ -27,7 +29,14 @@ export async function WorkbenchHeader() {
           </h1>
         </div>
         <div className={styles.headerAside}>
-          <AccountControl authUser={authUser} />
+          <div className={styles.accountRow}>
+            {authUser === null ? null : (
+              <Link className={styles.savedLink} href="/saved">
+                Saved analyses
+              </Link>
+            )}
+            <AccountControl authUser={authUser} />
+          </div>
           <div className={styles.releaseNote}>
             <p>
               This release analyzes <strong>Domain Demand</strong> for a

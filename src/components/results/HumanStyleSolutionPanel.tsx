@@ -51,6 +51,86 @@ function PhaseMoves({ phase }: Readonly<{ phase: CFOPPhaseResultV1 }>) {
   );
 }
 
+function CFOPResultContent({
+  result,
+  requestId,
+}: Readonly<{ result: CFOPResultV1; requestId?: string }>) {
+  return (
+    <div className={styles.cfopResult}>
+      <dl className={styles.compactMetrics}>
+        <div>
+          <dt>Total HTM</dt>
+          <dd>{result.solution.htm}</dd>
+        </div>
+        <div>
+          <dt>Total QTM</dt>
+          <dd>{result.solution.qtm}</dd>
+        </div>
+      </dl>
+
+      <div className={styles.cfopPhaseList}>
+        <PhaseMoves phase={result.phases.cross} />
+        <PhaseMoves phase={result.phases.f2l} />
+        <PhaseMoves phase={result.phases.oll} />
+        <PhaseMoves phase={result.phases.pll} />
+      </div>
+
+      <details className={styles.cfopDetails}>
+        <summary>F2L slot details and provenance</summary>
+        <dl className={styles.technicalList}>
+          <div>
+            <dt>Solved order</dt>
+            <dd>{result.phases.f2l.solvedOrder.join(" → ") || "Already solved"}</dd>
+          </div>
+          {result.phases.f2l.slots.map((slot) => (
+            <div key={slot.slot}>
+              <dt>{slot.slot} slot</dt>
+              <dd className="mono">{slot.moves.join(" ") || "No moves required"}</dd>
+            </div>
+          ))}
+          <div>
+            <dt>Input mode</dt>
+            <dd>{result.input.inputMode}</dd>
+          </div>
+          <div>
+            <dt>History usage</dt>
+            <dd>{result.method.historyUsage}</dd>
+          </div>
+          {requestId === undefined ? null : (
+            <div>
+              <dt>Request ID</dt>
+              <dd className="mono">{requestId}</dd>
+            </div>
+          )}
+        </dl>
+      </details>
+    </div>
+  );
+}
+
+export function SavedHumanStyleSolutionPanel({
+  result,
+}: Readonly<{ result?: CFOPResultV1 }>) {
+  return (
+    <section aria-labelledby="saved-cfop-heading" className={styles.section}>
+      <p className={styles.sectionLabel}>Stored separate cube solution information</p>
+      <h3 id="saved-cfop-heading">Human-style CFOP snapshot</h3>
+      <p className={styles.supportingCopy}>
+        This is stored method output from the save operation. Opening this record
+        does not re-run CFOP, and the output remains separate from Human State,
+        Domain Demand, Entropy, Interpretation, and Evaluation.
+      </p>
+      {result === undefined ? (
+        <div className={styles.infoNote}>
+          CFOP was not included in this saved snapshot.
+        </div>
+      ) : (
+        <CFOPResultContent result={result} />
+      )}
+    </section>
+  );
+}
+
 export function HumanStyleSolutionPanel({ facelets }: HumanStyleSolutionPanelProps) {
   const [status, setStatus] = useState<
     "IDLE" | "LOADING" | "SUCCESS" | "ERROR" | "CANCELLED"
@@ -200,51 +280,7 @@ export function HumanStyleSolutionPanel({ facelets }: HumanStyleSolutionPanelPro
           <h4 ref={resultRef} tabIndex={-1}>
             Verified CFOP phase solution
           </h4>
-          <dl className={styles.compactMetrics}>
-            <div>
-              <dt>Total HTM</dt>
-              <dd>{result.solution.htm}</dd>
-            </div>
-            <div>
-              <dt>Total QTM</dt>
-              <dd>{result.solution.qtm}</dd>
-            </div>
-          </dl>
-
-          <div className={styles.cfopPhaseList}>
-            <PhaseMoves phase={result.phases.cross} />
-            <PhaseMoves phase={result.phases.f2l} />
-            <PhaseMoves phase={result.phases.oll} />
-            <PhaseMoves phase={result.phases.pll} />
-          </div>
-
-          <details className={styles.cfopDetails}>
-            <summary>F2L slot details and provenance</summary>
-            <dl className={styles.technicalList}>
-              <div>
-                <dt>Solved order</dt>
-                <dd>{result.phases.f2l.solvedOrder.join(" → ") || "Already solved"}</dd>
-              </div>
-              {result.phases.f2l.slots.map((slot) => (
-                <div key={slot.slot}>
-                  <dt>{slot.slot} slot</dt>
-                  <dd className="mono">{slot.moves.join(" ") || "No moves required"}</dd>
-                </div>
-              ))}
-              <div>
-                <dt>Input mode</dt>
-                <dd>{result.input.inputMode}</dd>
-              </div>
-              <div>
-                <dt>History usage</dt>
-                <dd>{result.method.historyUsage}</dd>
-              </div>
-              <div>
-                <dt>Request ID</dt>
-                <dd className="mono">{committed?.requestId}</dd>
-              </div>
-            </dl>
-          </details>
+          <CFOPResultContent requestId={committed?.requestId} result={result} />
         </div>
       ) : null}
     </section>

@@ -18,6 +18,7 @@ import {
 } from "../../lib/ui/workbenchStateV1";
 import { consumeScannerDraftHandoffV1 } from "../../lib/ui/scannerDraftHandoffV1";
 import { EvaluationResultPanel } from "../results/EvaluationResultPanel";
+import { SaveAnalysisControls } from "../saved/SaveAnalysisControls";
 import { CubeInputPanel } from "./CubeInputPanel";
 import styles from "./workbench.module.css";
 
@@ -333,23 +334,26 @@ export function EvaluatorWorkbench() {
       </section>
 
       {state.phase === "SUCCESS" && state.result !== null ? (
-        <EvaluationResultPanel
-          facelets={serializeCubeDraftV1(state.draft)}
-          onSelectTraceRecord={(recordId) =>
-            dispatch({ type: "SELECT_TRACE_RECORD", recordId })
-          }
-          onTraceExpandedChange={(expanded) =>
-            dispatch({ type: "SET_RESULT_DETAILS", expanded })
-          }
-          onTracePageChange={(page) =>
-            dispatch({ type: "SET_TRACE_PAGE", page })
-          }
-          ref={resultRef}
-          result={state.result}
-          selectedTraceRecordId={state.selectedTraceRecordId}
-          traceExpanded={state.resultDetailsExpanded}
-          tracePage={state.tracePage}
-        />
+        <div>
+          <EvaluationResultPanel
+            facelets={serializeCubeDraftV1(state.draft)}
+            onSelectTraceRecord={(recordId) =>
+              dispatch({ type: "SELECT_TRACE_RECORD", recordId })
+            }
+            onTraceExpandedChange={(expanded) =>
+              dispatch({ type: "SET_RESULT_DETAILS", expanded })
+            }
+            onTracePageChange={(page) =>
+              dispatch({ type: "SET_TRACE_PAGE", page })
+            }
+            ref={resultRef}
+            result={state.result}
+            selectedTraceRecordId={state.selectedTraceRecordId}
+            traceExpanded={state.resultDetailsExpanded}
+            tracePage={state.tracePage}
+          />
+          <SaveAnalysisControls facelets={serializeCubeDraftV1(state.draft)} />
+        </div>
       ) : null}
     </div>
   );

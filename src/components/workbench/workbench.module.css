@@ -41,6 +41,21 @@
   gap: 12px;
 }
 
+.accountRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.savedLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
 .releaseNote {
   padding-left: 16px;
   border-left: 3px solid var(--ui-accent);
@@ -281,6 +296,16 @@
 
   .headerAside {
     max-width: none;
+  }
+
+  .accountRow {
+    align-items: flex-start;
+    flex-direction: column-reverse;
+    margin-top: 16px;
+  }
+
+  .accountRow > div {
+    margin-top: 0;
   }
 }
 
