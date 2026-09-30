@@ -19,7 +19,7 @@ const OWNER = "github:101";
 const STATE_ID = "a".repeat(64);
 const CREATED_AT = "2026-09-30T00:00:00.000Z";
 
-function evaluation(): EvaluateResultV1 {
+function analysisSnapshot(): EvaluateResultV1 {
   return {
     cubeState: { stateId: STATE_ID, format: "URFDLB_FACELETS_V1" },
   } as unknown as EvaluateResultV1;
@@ -34,8 +34,8 @@ function record(overrides: Partial<SavedAnalysisRecordV1> = {}): SavedAnalysisRe
     cubeFormat: "URFDLB_FACELETS_V1",
     cubeFacelets: SOLVED_FACELETS_V1,
     cubeStateId: STATE_ID,
-    evaluationSchemaVersion: "1.0",
-    evaluationResult: evaluation(),
+    evaluateApiSchemaVersion: "1.0",
+    analysisSnapshot: analysisSnapshot(),
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     ...overrides,
@@ -51,10 +51,25 @@ function databaseRow(overrides: Record<string, unknown> = {}) {
     cube_format: "URFDLB_FACELETS_V1",
     cube_facelets: SOLVED_FACELETS_V1,
     cube_state_id: STATE_ID,
-    evaluation_schema_version: "1.0",
-    evaluation_json: evaluation(),
+    evaluate_api_schema_version: "1.0",
+    analysis_json: analysisSnapshot(),
     cfop_schema_version: null,
     cfop_json: null,
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function databaseListRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ID,
+    owner_id: OWNER,
+    schema_version: "1.0",
+    label: "Solved case",
+    cube_format: "URFDLB_FACELETS_V1",
+    cube_state_id: STATE_ID,
+    cfop_schema_version: null,
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
     ...overrides,
@@ -92,7 +107,7 @@ describe("Saved Analysis V1 contract", () => {
       cubeState: { format: "URFDLB_FACELETS_V1", facelets: SOLVED_FACELETS_V1 },
       includeCfop: false,
     };
-    expect(() => parseSaveAnalysisRequestV1({ ...base, evaluation: {} })).toThrow(SavedAnalysisV1Error);
+    expect(() => parseSaveAnalysisRequestV1({ ...base, analysis: {} })).toThrow(SavedAnalysisV1Error);
     expect(() => parseSaveAnalysisRequestV1({ ...base, ownerId: OWNER })).toThrow(SavedAnalysisV1Error);
     expect(() => parseSaveAnalysisRequestV1({ ...base, label: "🧊".repeat(121) })).toThrow(SavedAnalysisV1Error);
     expect(() => parseSaveAnalysisRequestV1({ ...base, label: "🧊".repeat(120) })).not.toThrow();
@@ -117,16 +132,17 @@ describe("Saved Analysis V1 contract", () => {
     const full = serializeSavedAnalysisV1(record());
     const item = serializeSavedAnalysisListItemV1(record());
     expect(full).not.toHaveProperty("ownerId");
-    expect(full).not.toHaveProperty("evaluation_json");
-    expect(full.evaluation.result.cubeState.stateId).toBe(STATE_ID);
+    expect(full).not.toHaveProperty("analysis_json");
+    expect(full).not.toHaveProperty("evaluation");
+    expect(full.analysis.result.cubeState.stateId).toBe(STATE_ID);
     expect(item).not.toHaveProperty("ownerId");
-    expect(item).not.toHaveProperty("evaluation");
+    expect(item).not.toHaveProperty("analysis");
     expect(item.hasCfop).toBe(false);
   });
 
   it("fails closed for incompatible historical schema identities", () => {
     expect(() => serializeSavedAnalysisV1(record({ schemaVersion: "2.0" as "1.0" }))).toThrow(SavedAnalysisV1Error);
-    expect(() => serializeSavedAnalysisV1(record({ evaluationSchemaVersion: "2.0" as "1.0" }))).toThrow(SavedAnalysisV1Error);
+    expect(() => serializeSavedAnalysisV1(record({ evaluateApiSchemaVersion: "2.0" as "1.0" }))).toThrow(SavedAnalysisV1Error);
     expect(() => serializeSavedAnalysisV1(record({ cubeStateId: "legacy-state" }))).toThrow(SavedAnalysisV1Error);
   });
 });
@@ -134,7 +150,7 @@ describe("Saved Analysis V1 contract", () => {
 describe("Postgres Saved Analysis V1 ownership and pagination", () => {
   it("binds owner identity into list, find, and delete SQL", async () => {
     const query = vi.fn()
-      .mockResolvedValueOnce([databaseRow()])
+      .mockResolvedValueOnce([databaseListRow()])
       .mockResolvedValueOnce([databaseRow()])
       .mockResolvedValueOnce([{ id: ID }]);
     const repository = new PostgresSavedAnalysisRepositoryV1({ query } as never);
@@ -143,6 +159,10 @@ describe("Postgres Saved Analysis V1 ownership and pagination", () => {
     await repository.findByOwnerAndId(OWNER, ID);
     await repository.deleteByOwnerAndId(OWNER, ID);
 
+    expect(query.mock.calls[0][0]).not.toMatch(
+      /analysis_json|cfop_json|cube_facelets|evaluate_api_schema_version/
+    );
+    expect(query.mock.calls[0][0]).toMatch(/cfop_schema_version/);
     for (const call of query.mock.calls) {
       expect(call[0]).toMatch(/owner_id = \$1/);
       expect(call[1][0]).toBe(OWNER);
@@ -153,8 +173,8 @@ describe("Postgres Saved Analysis V1 ownership and pagination", () => {
   it("uses a stable descending cursor and returns continuation only for extra rows", async () => {
     const secondId = "22222222-2222-4222-8222-222222222222";
     const query = vi.fn().mockResolvedValue([
-      databaseRow(),
-      databaseRow({ id: secondId, created_at: "2026-09-29T00:00:00.000Z" }),
+      databaseListRow(),
+      databaseListRow({ id: secondId, created_at: "2026-09-29T00:00:00.000Z" }),
     ]);
     const repository = new PostgresSavedAnalysisRepositoryV1({ query } as never);
     const page = await repository.listByOwner(OWNER, {

@@ -6,6 +6,7 @@ import { createCubeFaceletStateV1 } from "../../src/lib/cube/cubeStateV1";
 import { EvaluateV1Error } from "../../src/lib/integration/evaluateErrorsV1";
 import type {
   SavedAnalysisRecordPageV1,
+  SavedAnalysisListRecordV1,
   SavedAnalysisRecordV1,
   SavedAnalysisRepositoryV1,
 } from "../../src/lib/saved-analysis/SavedAnalysisRepositoryV1";
@@ -46,7 +47,21 @@ class FakeRepository implements SavedAnalysisRepositoryV1 {
     const start = query.cursor === undefined
       ? 0
       : records.findIndex((record) => record.createdAt < query.cursor!.createdAt || (record.createdAt === query.cursor!.createdAt && record.id < query.cursor!.id));
-    const page = records.slice(Math.max(0, start), Math.max(0, start) + query.limit);
+    const page: SavedAnalysisListRecordV1[] = records
+      .slice(Math.max(0, start), Math.max(0, start) + query.limit)
+      .map((record) => ({
+        id: record.id,
+        ownerId: record.ownerId,
+        schemaVersion: record.schemaVersion,
+        ...(record.label === undefined ? {} : { label: record.label }),
+        cubeFormat: record.cubeFormat,
+        cubeStateId: record.cubeStateId,
+        ...(record.cfopSchemaVersion === undefined
+          ? {}
+          : { cfopSchemaVersion: record.cfopSchemaVersion }),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      }));
     return { records: page };
   }
 
@@ -61,7 +76,7 @@ class FakeRepository implements SavedAnalysisRepositoryV1 {
   }
 }
 
-function evaluationResult(facelets: string): EvaluateResultV1 {
+function analysisSnapshot(facelets: string): EvaluateResultV1 {
   const cube = createCubeFaceletStateV1(facelets);
   return {
     cubeState: { stateId: cube.stateId, format: cube.format },
@@ -115,10 +130,10 @@ describe("Saved Analysis V1 authenticated API", () => {
       serviceFactory: (storage: SavedAnalysisRepositoryV1) =>
         new SavedAnalysisServiceV1({
           repository: storage,
-          evaluation: {
+          evaluateApi: {
             execute: async (request) => {
               try {
-                return evaluationResult(request.cubeState.facelets);
+                return analysisSnapshot(request.cubeState.facelets);
               } catch {
                 throw new EvaluateV1Error("INVALID_CUBE_STATE");
               }
@@ -142,6 +157,8 @@ describe("Saved Analysis V1 authenticated API", () => {
     const created = await createResponse.json();
     expect(createResponse.status).toBe(201);
     expect(created.savedAnalysis).toMatchObject({ id: ID_A, label: "Acceptance record" });
+    expect(created.savedAnalysis).toHaveProperty("analysis");
+    expect(created.savedAnalysis).not.toHaveProperty("evaluation");
     expect(created.savedAnalysis).not.toHaveProperty("ownerId");
     expect(repository.records.get(ID_A)?.ownerId).toBe(USER_A.ownerId);
 
@@ -150,7 +167,7 @@ describe("Saved Analysis V1 authenticated API", () => {
     expect(list.list.items).toEqual([
       expect.objectContaining({ id: ID_A, hasCfop: false }),
     ]);
-    expect(list.list.items[0]).not.toHaveProperty("evaluation");
+    expect(list.list.items[0]).not.toHaveProperty("analysis");
 
     const detailResponse = await createSavedAnalysisDetailHandlerV1(dependencies())(getRequest(`/api/saved-analyses/${ID_A}`), context(ID_A));
     expect(detailResponse.status).toBe(200);

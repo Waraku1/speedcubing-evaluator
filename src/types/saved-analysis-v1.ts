@@ -27,7 +27,7 @@ export type SavedAnalysisV1 = Readonly<{
     facelets: string;
     stateId: string;
   }>;
-  evaluation: Readonly<{
+  analysis: Readonly<{
     schemaVersion: "1.0";
     result: EvaluateResultV1;
   }>;

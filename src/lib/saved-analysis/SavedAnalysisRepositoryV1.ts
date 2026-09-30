@@ -9,8 +9,8 @@ export type SavedAnalysisRecordV1 = Readonly<{
   cubeFormat: "URFDLB_FACELETS_V1";
   cubeFacelets: string;
   cubeStateId: string;
-  evaluationSchemaVersion: "1.0";
-  evaluationResult: EvaluateResultV1;
+  evaluateApiSchemaVersion: "1.0";
+  analysisSnapshot: EvaluateResultV1;
   cfopSchemaVersion?: "1.0";
   cfopResult?: CFOPResultV1;
   createdAt: string;
@@ -18,6 +18,18 @@ export type SavedAnalysisRecordV1 = Readonly<{
 }>;
 
 export type SavedAnalysisCreateRecordV1 = SavedAnalysisRecordV1;
+
+export type SavedAnalysisListRecordV1 = Readonly<{
+  id: string;
+  ownerId: string;
+  schemaVersion: "1.0";
+  label?: string;
+  cubeFormat: "URFDLB_FACELETS_V1";
+  cubeStateId: string;
+  cfopSchemaVersion?: "1.0";
+  createdAt: string;
+  updatedAt: string;
+}>;
 
 export type SavedAnalysisCursorV1 = Readonly<{
   createdAt: string;
@@ -30,7 +42,7 @@ export type SavedAnalysisListQueryV1 = Readonly<{
 }>;
 
 export type SavedAnalysisRecordPageV1 = Readonly<{
-  records: readonly SavedAnalysisRecordV1[];
+  records: readonly SavedAnalysisListRecordV1[];
   nextCursor?: SavedAnalysisCursorV1;
 }>;
 

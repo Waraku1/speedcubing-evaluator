@@ -126,7 +126,7 @@ export function parseSavedAnalysisListResponseV1(
 
 export type SavedAnalysisDetailClientV1 = Readonly<{
   savedAnalysis: SavedAnalysisV1;
-  evaluation: UiEvaluateResultV1;
+  analysis: UiEvaluateResultV1;
   cfop?: CFOPResultV1;
 }>;
 
@@ -146,7 +146,7 @@ export function parseSavedAnalysisDetailResponseV1(
   }
   const saved = payload.savedAnalysis;
   const expected = [
-    "createdAt", "cubeState", "evaluation", "id", "schemaVersion", "updatedAt",
+    "analysis", "createdAt", "cubeState", "id", "schemaVersion", "updatedAt",
     ...(saved.label === undefined ? [] : ["label"]),
     ...(saved.cfop === undefined ? [] : ["cfop"]),
   ];
@@ -162,17 +162,17 @@ export function parseSavedAnalysisDetailResponseV1(
     saved.cubeState.format !== "URFDLB_FACELETS_V1" ||
     typeof saved.cubeState.facelets !== "string" ||
     typeof saved.cubeState.stateId !== "string" ||
-    !isRecord(saved.evaluation) ||
-    !hasExactKeys(saved.evaluation, ["result", "schemaVersion"]) ||
-    saved.evaluation.schemaVersion !== "1.0"
+    !isRecord(saved.analysis) ||
+    !hasExactKeys(saved.analysis, ["result", "schemaVersion"]) ||
+    saved.analysis.schemaVersion !== "1.0"
   ) {
     incompatible();
   }
-  const evaluation = parseEvaluateResponseV1(
-    { schemaVersion: "1.0", requestId: `saved:${saved.id}`, result: saved.evaluation.result },
+  const analysis = parseEvaluateResponseV1(
+    { schemaVersion: "1.0", requestId: `saved:${saved.id}`, result: saved.analysis.result },
     true
   );
-  if (evaluation.cube.stateId !== saved.cubeState.stateId) incompatible();
+  if (analysis.cube.stateId !== saved.cubeState.stateId) incompatible();
 
   let cfop: CFOPResultV1 | undefined;
   if (saved.cfop !== undefined) {
@@ -192,7 +192,7 @@ export function parseSavedAnalysisDetailResponseV1(
 
   return Object.freeze({
     savedAnalysis: saved as unknown as SavedAnalysisV1,
-    evaluation,
+    analysis,
     ...(cfop === undefined ? {} : { cfop }),
   });
 }

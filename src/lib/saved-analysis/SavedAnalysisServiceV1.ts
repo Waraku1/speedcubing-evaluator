@@ -30,7 +30,7 @@ import type {
 } from "./SavedAnalysisRepositoryV1";
 import { SavedAnalysisV1Error } from "./savedAnalysisErrorsV1";
 
-export type SavedAnalysisEvaluatePortV1 = Pick<
+export type SavedAnalysisEvaluateApiPortV1 = Pick<
   AtomicDemandStopServiceV1,
   "execute"
 >;
@@ -38,7 +38,7 @@ export type SavedAnalysisCFOPPortV1 = Pick<CFOPServiceV1, "execute">;
 
 export type SavedAnalysisServiceDependenciesV1 = Readonly<{
   repository: SavedAnalysisRepositoryV1;
-  evaluation?: SavedAnalysisEvaluatePortV1;
+  evaluateApi?: SavedAnalysisEvaluateApiPortV1;
   cfop?: SavedAnalysisCFOPPortV1;
   idFactory?: () => string;
   now?: () => Date;
@@ -50,7 +50,7 @@ function assertOwnerId(ownerId: string): void {
   }
 }
 
-function mapEvaluationFailure(error: unknown): SavedAnalysisV1Error {
+function mapEvaluateApiFailure(error: unknown): SavedAnalysisV1Error {
   if (isEvaluateV1Error(error)) {
     if (
       error.code === "INVALID_CUBE_STATE" ||
@@ -76,14 +76,14 @@ function mapCFOPFailure(error: unknown): SavedAnalysisV1Error {
 
 export class SavedAnalysisServiceV1 {
   private readonly repository: SavedAnalysisRepositoryV1;
-  private readonly evaluation: SavedAnalysisEvaluatePortV1;
+  private readonly evaluateApi: SavedAnalysisEvaluateApiPortV1;
   private readonly cfop: SavedAnalysisCFOPPortV1;
   private readonly idFactory: () => string;
   private readonly now: () => Date;
 
   constructor(dependencies: SavedAnalysisServiceDependenciesV1) {
     this.repository = dependencies.repository;
-    this.evaluation = dependencies.evaluation ?? atomicDemandStopServiceV1;
+    this.evaluateApi = dependencies.evaluateApi ?? atomicDemandStopServiceV1;
     this.cfop = dependencies.cfop ?? cfopServiceV1;
     this.idFactory = dependencies.idFactory ?? randomUUID;
     this.now = dependencies.now ?? (() => new Date());
@@ -95,18 +95,18 @@ export class SavedAnalysisServiceV1 {
     signal?: AbortSignal
   ): Promise<SavedAnalysisRecordV1> {
     assertOwnerId(ownerId);
-    const evaluationRequest: EvaluateRequestV1 = Object.freeze({
+    const evaluateApiRequest: EvaluateRequestV1 = Object.freeze({
       schemaVersion: EVALUATE_SCHEMA_VERSION_V1,
       cubeState: intent.cubeState,
     });
 
-    let evaluationResult: EvaluateResultV1;
+    let analysisSnapshot: EvaluateResultV1;
     try {
-      evaluationResult = await this.evaluation.execute(evaluationRequest, {
+      analysisSnapshot = await this.evaluateApi.execute(evaluateApiRequest, {
         signal,
       });
     } catch (error) {
-      throw mapEvaluationFailure(error);
+      throw mapEvaluateApiFailure(error);
     }
 
     let cfopResult: CFOPResultV1 | undefined;
@@ -124,9 +124,9 @@ export class SavedAnalysisServiceV1 {
     }
 
     if (
-      evaluationResult.cubeState.format !== intent.cubeState.format ||
+      analysisSnapshot.cubeState.format !== intent.cubeState.format ||
       (cfopResult !== undefined &&
-        (cfopResult.input.stateId !== evaluationResult.cubeState.stateId ||
+        (cfopResult.input.stateId !== analysisSnapshot.cubeState.stateId ||
           cfopResult.input.format !== intent.cubeState.format))
     ) {
       throw new SavedAnalysisV1Error("INTERNAL_FAILURE");
@@ -141,9 +141,9 @@ export class SavedAnalysisServiceV1 {
         ...(intent.label === undefined ? {} : { label: intent.label }),
         cubeFormat: intent.cubeState.format,
         cubeFacelets: intent.cubeState.facelets,
-        cubeStateId: evaluationResult.cubeState.stateId,
-        evaluationSchemaVersion: EVALUATE_SCHEMA_VERSION_V1,
-        evaluationResult,
+        cubeStateId: analysisSnapshot.cubeState.stateId,
+        evaluateApiSchemaVersion: EVALUATE_SCHEMA_VERSION_V1,
+        analysisSnapshot,
         ...(cfopResult === undefined
           ? {}
           : {

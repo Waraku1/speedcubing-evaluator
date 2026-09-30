@@ -119,7 +119,7 @@ export function SavedAnalysesManager() {
               <div>
                 <h3>{item.label ?? "Untitled analysis"}</h3>
                 <p>
-                  Saved {new Date(item.createdAt).toLocaleString()} · {item.hasCfop ? "CFOP included" : "Evaluation only"}
+                  Saved {new Date(item.createdAt).toLocaleString()} · {item.hasCfop ? "CFOP included" : "CFOP not included"}
                 </p>
                 <p className="mono">{item.cubeState.stateId}</p>
               </div>

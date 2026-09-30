@@ -76,7 +76,7 @@ export function SavedAnalysisDetailView({ id }: Readonly<{ id: string }>) {
         onTraceExpandedChange={setTraceExpanded}
         onTracePageChange={setTracePage}
         ref={resultRef}
-        result={detail.evaluation}
+        result={detail.analysis}
         selectedTraceRecordId={selectedRecordId}
         snapshot={{
           id: detail.savedAnalysis.id,

@@ -4,6 +4,7 @@ import type { CFOPResultV1 } from "../../types/cfop-v1";
 import type { EvaluateResultV1 } from "../../types/evaluate-v1";
 import type {
   SavedAnalysisCreateRecordV1,
+  SavedAnalysisListRecordV1,
   SavedAnalysisRecordPageV1,
   SavedAnalysisRecordV1,
   SavedAnalysisRepositoryV1,
@@ -19,7 +20,7 @@ const OWNER_ID_PATTERN = /^github:\d{1,20}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const RETURNING_COLUMNS = `
+const SNAPSHOT_COLUMNS = `
   id,
   owner_id,
   schema_version,
@@ -27,10 +28,22 @@ const RETURNING_COLUMNS = `
   cube_format,
   cube_facelets,
   cube_state_id,
-  evaluation_schema_version,
-  evaluation_json,
+  evaluate_api_schema_version,
+  analysis_json,
   cfop_schema_version,
   cfop_json,
+  created_at,
+  updated_at
+`;
+
+const LIST_COLUMNS = `
+  id,
+  owner_id,
+  schema_version,
+  label,
+  cube_format,
+  cube_state_id,
+  cfop_schema_version,
   created_at,
   updated_at
 `;
@@ -63,28 +76,20 @@ function jsonValue<T>(value: unknown): T {
   }
 }
 
-function mapRow(row: DatabaseRowV1): SavedAnalysisRecordV1 {
+function baseMetadata(row: DatabaseRowV1): SavedAnalysisListRecordV1 {
   const schemaVersion = requiredString(row, "schema_version");
   const cubeFormat = requiredString(row, "cube_format");
-  const evaluationSchemaVersion = requiredString(
-    row,
-    "evaluation_schema_version"
-  );
   const rawLabel = row.label;
   const rawCfopVersion = row.cfop_schema_version;
-  const rawCfop = row.cfop_json;
   if (
     schemaVersion !== "1.0" ||
     cubeFormat !== "URFDLB_FACELETS_V1" ||
-    evaluationSchemaVersion !== "1.0" ||
     (rawLabel !== null &&
       rawLabel !== undefined &&
       typeof rawLabel !== "string") ||
     (rawCfopVersion !== null &&
       rawCfopVersion !== undefined &&
-      rawCfopVersion !== "1.0") ||
-    ((rawCfopVersion === null || rawCfopVersion === undefined) !==
-      (rawCfop === null || rawCfop === undefined))
+      rawCfopVersion !== "1.0")
   ) {
     throw new SavedAnalysisV1Error("INTERNAL_FAILURE");
   }
@@ -95,18 +100,36 @@ function mapRow(row: DatabaseRowV1): SavedAnalysisRecordV1 {
     schemaVersion,
     ...(typeof rawLabel === "string" ? { label: rawLabel } : {}),
     cubeFormat,
-    cubeFacelets: requiredString(row, "cube_facelets"),
     cubeStateId: requiredString(row, "cube_state_id"),
-    evaluationSchemaVersion,
-    evaluationResult: jsonValue<EvaluateResultV1>(row.evaluation_json),
-    ...(rawCfopVersion === "1.0"
-      ? {
-          cfopSchemaVersion: rawCfopVersion,
-          cfopResult: jsonValue<CFOPResultV1>(rawCfop),
-        }
-      : {}),
+    ...(rawCfopVersion === "1.0" ? { cfopSchemaVersion: rawCfopVersion } : {}),
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
+  });
+}
+
+function mapSnapshotRow(row: DatabaseRowV1): SavedAnalysisRecordV1 {
+  const metadata = baseMetadata(row);
+  const evaluateApiSchemaVersion = requiredString(
+    row,
+    "evaluate_api_schema_version"
+  );
+  const rawCfop = row.cfop_json;
+  if (
+    evaluateApiSchemaVersion !== "1.0" ||
+    ((metadata.cfopSchemaVersion === undefined) !==
+      (rawCfop === null || rawCfop === undefined))
+  ) {
+    throw new SavedAnalysisV1Error("INTERNAL_FAILURE");
+  }
+
+  return Object.freeze({
+    ...metadata,
+    cubeFacelets: requiredString(row, "cube_facelets"),
+    evaluateApiSchemaVersion,
+    analysisSnapshot: jsonValue<EvaluateResultV1>(row.analysis_json),
+    ...(metadata.cfopSchemaVersion === "1.0"
+      ? { cfopResult: jsonValue<CFOPResultV1>(rawCfop) }
+      : {}),
   });
 }
 
@@ -148,12 +171,12 @@ export class PostgresSavedAnalysisRepositoryV1
       this.query,
       `INSERT INTO saved_analyses (
         id, owner_id, schema_version, label, cube_format, cube_facelets,
-        cube_state_id, evaluation_schema_version, evaluation_json,
+        cube_state_id, evaluate_api_schema_version, analysis_json,
         cfop_schema_version, cfop_json, created_at, updated_at
       ) VALUES (
         $1::uuid, $2, $3, $4, $5, $6,
         $7, $8, $9::jsonb, $10, $11::jsonb, $12::timestamptz, $13::timestamptz
-      ) RETURNING ${RETURNING_COLUMNS}`,
+      ) RETURNING ${SNAPSHOT_COLUMNS}`,
       [
         record.id,
         record.ownerId,
@@ -162,8 +185,8 @@ export class PostgresSavedAnalysisRepositoryV1
         record.cubeFormat,
         record.cubeFacelets,
         record.cubeStateId,
-        record.evaluationSchemaVersion,
-        JSON.stringify(record.evaluationResult),
+        record.evaluateApiSchemaVersion,
+        JSON.stringify(record.analysisSnapshot),
         record.cfopSchemaVersion ?? null,
         record.cfopResult === undefined
           ? null
@@ -175,7 +198,7 @@ export class PostgresSavedAnalysisRepositoryV1
     if (rows.length !== 1) {
       throw new SavedAnalysisV1Error("STORAGE_UNAVAILABLE");
     }
-    return mapRow(rows[0]);
+    return mapSnapshotRow(rows[0]);
   }
 
   async listByOwner(
@@ -188,7 +211,7 @@ export class PostgresSavedAnalysisRepositoryV1
       query.cursor === undefined
         ? await storageQuery(
             this.query,
-            `SELECT ${RETURNING_COLUMNS}
+            `SELECT ${LIST_COLUMNS}
              FROM saved_analyses
              WHERE owner_id = $1
              ORDER BY created_at DESC, id DESC
@@ -197,7 +220,7 @@ export class PostgresSavedAnalysisRepositoryV1
           )
         : await storageQuery(
             this.query,
-            `SELECT ${RETURNING_COLUMNS}
+            `SELECT ${LIST_COLUMNS}
              FROM saved_analyses
              WHERE owner_id = $1
                AND (created_at, id) < ($2::timestamptz, $3::uuid)
@@ -205,7 +228,7 @@ export class PostgresSavedAnalysisRepositoryV1
              LIMIT $4::integer`,
             [ownerId, query.cursor.createdAt, query.cursor.id, rowLimit]
           );
-    const records = rows.slice(0, query.limit).map(mapRow);
+    const records = rows.slice(0, query.limit).map(baseMetadata);
     const last = records.at(-1);
     return Object.freeze({
       records: Object.freeze(records),
@@ -223,13 +246,13 @@ export class PostgresSavedAnalysisRepositoryV1
     assertId(id);
     const rows = await storageQuery(
       this.query,
-      `SELECT ${RETURNING_COLUMNS}
+      `SELECT ${SNAPSHOT_COLUMNS}
        FROM saved_analyses
        WHERE owner_id = $1 AND id = $2::uuid
        LIMIT 1`,
       [ownerId, id]
     );
-    return rows.length === 0 ? null : mapRow(rows[0]);
+    return rows.length === 0 ? null : mapSnapshotRow(rows[0]);
   }
 
   async deleteByOwnerAndId(ownerId: string, id: string): Promise<boolean> {

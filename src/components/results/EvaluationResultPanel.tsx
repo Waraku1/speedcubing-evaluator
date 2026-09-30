@@ -56,7 +56,7 @@ export const EvaluationResultPanel = forwardRef<
         {snapshot === undefined ? "Current live evaluation" : "Saved snapshot"}
       </p>
       <h2 id="result-heading" ref={ref} tabIndex={-1}>
-        {snapshot === undefined ? "Evaluation result" : "Saved evaluation snapshot"}
+        {snapshot === undefined ? "Evaluation result" : "Saved analysis snapshot"}
       </h2>
       <p className={styles.resultIntro}>
         {snapshot === undefined

@@ -20,6 +20,7 @@ import {
 } from "../../types/saved-analysis-v1";
 import type {
   SavedAnalysisCursorV1,
+  SavedAnalysisListRecordV1,
   SavedAnalysisRecordPageV1,
   SavedAnalysisRecordV1,
 } from "./SavedAnalysisRepositoryV1";
@@ -150,17 +151,14 @@ export function parseSavedAnalysisListQueryV1(url: URL): Readonly<{
 }
 
 function assertCompatibleRecord(record: SavedAnalysisRecordV1): void {
-  const evaluation = record.evaluationResult as unknown;
+  assertCompatibleListRecord(record);
+  const analysis = record.analysisSnapshot as unknown;
   const cfop = record.cfopResult as unknown;
   if (
-    !UUID_PATTERN.test(record.id) ||
-    record.schemaVersion !== SAVED_ANALYSIS_SCHEMA_VERSION_V1 ||
-    record.cubeFormat !== "URFDLB_FACELETS_V1" ||
-    !STATE_ID_PATTERN.test(record.cubeStateId) ||
-    record.evaluationSchemaVersion !== EVALUATE_SCHEMA_VERSION_V1 ||
-    !isRecord(evaluation) ||
-    !isRecord(evaluation.cubeState) ||
-    evaluation.cubeState.stateId !== record.cubeStateId ||
+    record.evaluateApiSchemaVersion !== EVALUATE_SCHEMA_VERSION_V1 ||
+    !isRecord(analysis) ||
+    !isRecord(analysis.cubeState) ||
+    analysis.cubeState.stateId !== record.cubeStateId ||
     (record.cfopResult === undefined) !==
       (record.cfopSchemaVersion === undefined) ||
     (cfop !== undefined &&
@@ -168,6 +166,19 @@ function assertCompatibleRecord(record: SavedAnalysisRecordV1): void {
         record.cfopSchemaVersion !== CFOP_SCHEMA_VERSION_V1 ||
         !isRecord(cfop.input) ||
         cfop.input.stateId !== record.cubeStateId))
+  ) {
+    throw new SavedAnalysisV1Error("INTERNAL_FAILURE");
+  }
+}
+
+function assertCompatibleListRecord(record: SavedAnalysisListRecordV1): void {
+  if (
+    !UUID_PATTERN.test(record.id) ||
+    record.schemaVersion !== SAVED_ANALYSIS_SCHEMA_VERSION_V1 ||
+    record.cubeFormat !== "URFDLB_FACELETS_V1" ||
+    !STATE_ID_PATTERN.test(record.cubeStateId) ||
+    (record.cfopSchemaVersion !== undefined &&
+      record.cfopSchemaVersion !== CFOP_SCHEMA_VERSION_V1)
   ) {
     throw new SavedAnalysisV1Error("INTERNAL_FAILURE");
   }
@@ -188,9 +199,9 @@ export function serializeSavedAnalysisV1(
       facelets: record.cubeFacelets,
       stateId: record.cubeStateId,
     }),
-    evaluation: Object.freeze({
+    analysis: Object.freeze({
       schemaVersion: EVALUATE_SCHEMA_VERSION_V1,
-      result: record.evaluationResult as EvaluateResultV1,
+      result: record.analysisSnapshot as EvaluateResultV1,
     }),
     ...(record.cfopResult === undefined
       ? {}
@@ -204,9 +215,9 @@ export function serializeSavedAnalysisV1(
 }
 
 export function serializeSavedAnalysisListItemV1(
-  record: SavedAnalysisRecordV1
+  record: SavedAnalysisListRecordV1
 ): SavedAnalysisListItemV1 {
-  assertCompatibleRecord(record);
+  assertCompatibleListRecord(record);
   return Object.freeze({
     id: record.id,
     schemaVersion: SAVED_ANALYSIS_SCHEMA_VERSION_V1,
@@ -217,7 +228,7 @@ export function serializeSavedAnalysisListItemV1(
       format: record.cubeFormat,
       stateId: record.cubeStateId,
     }),
-    hasCfop: record.cfopResult !== undefined,
+    hasCfop: record.cfopSchemaVersion !== undefined,
   });
 }
 
