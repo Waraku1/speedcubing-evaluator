@@ -56,6 +56,10 @@ export type F2LResult = {
   searchedNodes: number;
 };
 
+export type F2LSolveOptions = Readonly<{
+  firstSlot?: F2LSlot;
+}>;
+
 type SearchNode = {
   state: CubeState;
   moves: Move[];
@@ -287,7 +291,10 @@ function chooseBestCandidate(state: CubeState): SlotCandidate {
   throw new Error(`[solveF2L] no human-macro solution found: ${details}`);
 }
 
-export function solveF2L(state: CubeState): F2LResult {
+export function solveF2L(
+  state: CubeState,
+  options: F2LSolveOptions = {},
+): F2LResult {
   if (!isAlignedCrossSolved(state).solved) {
     throw new Error(`[solveF2L] aligned cross must be solved before F2L`);
   }
@@ -310,9 +317,21 @@ export function solveF2L(state: CubeState): F2LResult {
   const solvedOrder: F2LSlot[] = [];
   const stages: F2LStage[] = [];
   let searchedNodes = 0;
+  const requestedFirstSlot = options.firstSlot;
+  let firstSlotPending =
+    requestedFirstSlot !== undefined &&
+    !isF2LSlotSolved(currentState, requestedFirstSlot);
 
   while (!isF2LSolved(currentState).solved) {
-    const candidate = chooseBestCandidate(currentState);
+    const candidate = firstSlotPending && requestedFirstSlot !== undefined
+      ? findSlotCandidate(currentState, requestedFirstSlot)
+      : chooseBestCandidate(currentState);
+    if (candidate === null) {
+      throw new Error(
+        `[solveF2L] no bounded first-slot candidate for ${requestedFirstSlot}`,
+      );
+    }
+    firstSlotPending = false;
     const before = currentState;
 
     appendMoves(allMoves, candidate.moves);

@@ -45,6 +45,8 @@ const EDGE_STATE_COUNT = 24;
 const CROSS_KEY_SPACE = EDGE_STATE_COUNT ** 4;
 const REACHABLE_CROSS_STATES = 190_080;
 const CROSS_NODE_LIMIT = 250_000;
+const CROSS_CANDIDATE_LIMIT = 4;
+const CROSS_CANDIDATE_NODE_LIMIT = CROSS_NODE_LIMIT * CROSS_CANDIDATE_LIMIT;
 
 // DF, DR, DB, DL in solved positions and orientations.
 const CROSS_GOAL_CODES = [16, 18, 20, 22] as const;
@@ -290,6 +292,129 @@ export function solveCross(
 
   throw new Error(
     `[solveCross] no phase-safe aligned cross found within ${maxDepth} moves; ` +
+      `pdbDistance=${lowerBound}, searchedNodes=${searchedNodes}`,
+  );
+}
+
+/**
+ * Enumerates distinct shortest phase-safe Cross solutions in the same
+ * deterministic move order used by solveCross. Searching stops at the first
+ * depth that contains a phase-safe solution, so longer identity-padded paths
+ * are never used to manufacture diversity.
+ */
+export function solveCrossCandidates(
+  state: CubeState,
+  limit = CROSS_CANDIDATE_LIMIT,
+  maxDepth = 8,
+): CrossResult[] {
+  if (!Number.isInteger(limit) || limit < 1 || limit > CROSS_CANDIDATE_LIMIT) {
+    throw new RangeError(
+      `[solveCrossCandidates] limit must be an integer from 1 to ${CROSS_CANDIDATE_LIMIT}`,
+    );
+  }
+
+  if (isAlignedCrossSolved(state).solved) {
+    return [{
+      moves: [],
+      depth: 0,
+      stateAfter: state,
+      pdbDistance: 0,
+      searchedNodes: 0,
+    }];
+  }
+
+  const distances = buildCrossDistances();
+  const startKey = getCrossKey(state);
+  const lowerBound = distances[startKey];
+
+  if (lowerBound < 0) {
+    throw new Error(`[solveCrossCandidates] invalid physical cross state`);
+  }
+
+  if (lowerBound > maxDepth) {
+    throw new Error(
+      `[solveCrossCandidates] cross requires at least ${lowerBound} moves, ` +
+        `above maxDepth=${maxDepth}`,
+    );
+  }
+
+  let searchedNodes = 0;
+  let nodeLimitReached = false;
+  const path: Move[] = [];
+  const seen = new Set<string>();
+
+  for (let depth = lowerBound; depth <= maxDepth; depth++) {
+    const results: CrossResult[] = [];
+
+    function collect(
+      currentState: CubeState,
+      currentKey: number,
+      remaining: number,
+      lastFace: string | null,
+    ): boolean {
+      searchedNodes++;
+      if (searchedNodes > CROSS_CANDIDATE_NODE_LIMIT) {
+        nodeLimitReached = true;
+        return true;
+      }
+
+      const minimumRemaining = distances[currentKey];
+      if (minimumRemaining < 0 || minimumRemaining > remaining) return false;
+
+      if (remaining === 0) {
+        if (currentKey !== CROSS_GOAL_KEY) return false;
+        if (!isPhaseSafeCrossGoal(state, currentState)) return false;
+
+        const key = path.join(" ");
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push({
+            moves: [...path],
+            depth: path.length,
+            stateAfter: currentState,
+            pdbDistance: lowerBound,
+            searchedNodes,
+          });
+        }
+        return results.length >= limit;
+      }
+
+      for (let moveIndex = 0; moveIndex < CROSS_MOVES.length; moveIndex++) {
+        const move = CROSS_MOVES[moveIndex];
+        const face = faceOf(move);
+        if (face === lastFace) continue;
+
+        const nextKey = moveCrossKey(currentKey, moveIndex);
+        if (distances[nextKey] > remaining - 1) continue;
+
+        path.push(move);
+        const shouldStop = collect(
+          applyMove(currentState, move),
+          nextKey,
+          remaining - 1,
+          face,
+        );
+        path.pop();
+
+        if (shouldStop) return true;
+      }
+
+      return false;
+    }
+
+    path.length = 0;
+    collect(state, startKey, depth, null);
+
+    if (results.length > 0) return results;
+    if (nodeLimitReached) {
+      throw new Error(
+        `[solveCrossCandidates] node limit exceeded: ${CROSS_CANDIDATE_NODE_LIMIT}`,
+      );
+    }
+  }
+
+  throw new Error(
+    `[solveCrossCandidates] no phase-safe aligned cross found within ${maxDepth} moves; ` +
       `pdbDistance=${lowerBound}, searchedNodes=${searchedNodes}`,
   );
 }

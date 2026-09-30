@@ -432,6 +432,10 @@
   margin-top: 16px;
 }
 
+.cfopResult > .cfopActions {
+  margin-top: 16px;
+}
+
 .cfopResult > .compactMetrics {
   margin-top: 12px;
 }
@@ -490,6 +494,108 @@
 .cfopError p,
 .cfopError h4 {
   margin: 0 0 8px;
+}
+
+.comparisonPanel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.comparisonSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.comparisonSelector button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.comparisonSelector button[aria-pressed="true"] {
+  border-color: var(--ui-accent);
+  background: var(--ui-subtle);
+}
+
+.comparisonGrid,
+.comparisonStages {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.comparisonCard,
+.comparisonStages li {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+}
+
+.comparisonCard h5 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.comparisonCard p {
+  overflow-wrap: anywhere;
+}
+
+.strategyLabel,
+.comparisonSummary {
+  color: var(--ui-muted);
+}
+
+.comparisonMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 120px));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.comparisonMetrics > div {
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.comparisonMetrics dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.comparisonMetrics dd {
+  margin: 3px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.comparisonStages {
+  list-style-position: inside;
+}
+
+.comparisonStages li {
+  background: var(--ui-surface);
+}
+
+.comparisonStages p {
+  margin: 6px 0 0;
+}
+
+.comparisonSummary {
+  margin-bottom: 0;
 }
 
 @media (max-width: 767px) {

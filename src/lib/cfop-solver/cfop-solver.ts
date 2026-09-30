@@ -34,12 +34,14 @@ import {
 
 import {
   solveCross,
+  solveCrossCandidates,
   type CrossResult,
 } from "./cross";
 
 import {
   solveF2L,
   type F2LResult,
+  type F2LSolveOptions,
 } from "./f2l";
 
 import {
@@ -99,6 +101,21 @@ export type CFOPStateSolveResult = CFOPPipelineResult & {
 };
 
 export type SolveResult = CFOPSolveResult;
+
+export const CFOP_ALTERNATIVE_STRATEGIES = [
+  "DEFAULT",
+  "CROSS_VARIANT",
+  "F2L_FIRST_SLOT",
+] as const;
+
+export type CFOPAlternativeStrategy =
+  (typeof CFOP_ALTERNATIVE_STRATEGIES)[number];
+
+export type CFOPStateAlternativeResult = Readonly<{
+  strategy: CFOPAlternativeStrategy;
+  firstSlot?: F2LSlot;
+  result: CFOPStateSolveResult;
+}>;
 
 
 const VALID_MOVES = new Set<string>([
@@ -331,13 +348,21 @@ function assertPLLPhase(before: CubeState, after: CubeState): void {
   }
 }
 
-function solveCFOPStatePipeline(inputState: CubeState): CFOPPipelineResult {
-  const cross = solveCross(inputState);
+type CFOPStatePipelineOptions = Readonly<{
+  cross?: CrossResult;
+  f2l?: F2LSolveOptions;
+}>;
+
+function solveCFOPStatePipeline(
+  inputState: CubeState,
+  options: CFOPStatePipelineOptions = {},
+): CFOPPipelineResult {
+  const cross = options.cross ?? solveCross(inputState);
   const crossPhase = makePhase("cross", inputState, cross.moves);
   assertSameState(crossPhase.stateAfter, cross.stateAfter, "Cross");
   assertCrossPhase(inputState, crossPhase.stateAfter);
 
-  const f2l = solveF2L(crossPhase.stateAfter);
+  const f2l = solveF2L(crossPhase.stateAfter, options.f2l);
   const f2lBasePhase = makePhase("f2l", crossPhase.stateAfter, f2l.moves);
   assertSameState(f2lBasePhase.stateAfter, f2l.stateAfter, "F2L");
   assertF2LStages(crossPhase.stateAfter, f2l);
@@ -413,6 +438,96 @@ export function solveCFOPFromState(inputState: CubeState): CFOPStateSolveResult 
     inputState,
     ...solveCFOPStatePipeline(inputState),
   };
+}
+
+function verifiedAlternative(
+  inputState: CubeState,
+  strategy: CFOPAlternativeStrategy,
+  options: CFOPStatePipelineOptions,
+  firstSlot?: F2LSlot,
+): CFOPStateAlternativeResult | null {
+  try {
+    const result: CFOPStateSolveResult = {
+      inputState,
+      ...solveCFOPStatePipeline(inputState, options),
+    };
+    if (!verifyStateSolveResult(result)) return null;
+    if (applyMoves(inputState, result.solution) !== SOLVED_STATE) return null;
+
+    return Object.freeze({
+      strategy,
+      ...(firstSlot === undefined ? {} : { firstSlot }),
+      result,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Produces a deterministic, bounded set of independently verified CFOP
+ * solutions. Candidate 1 is always the canonical solveCFOPFromState result.
+ */
+export function solveCFOPAlternativesFromState(
+  inputState: CubeState,
+  limit = 3,
+): readonly CFOPStateAlternativeResult[] {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 4) {
+    throw new RangeError(
+      "[cfop-solver] alternative limit must be an integer from 1 to 4",
+    );
+  }
+
+  const canonical = solveCFOPFromState(inputState);
+  if (
+    !verifyStateSolveResult(canonical) ||
+    applyMoves(inputState, canonical.solution) !== SOLVED_STATE
+  ) {
+    throw new Error("[cfop-solver] canonical candidate failed verification");
+  }
+
+  const alternatives: CFOPStateAlternativeResult[] = [Object.freeze({
+    strategy: "DEFAULT",
+    result: canonical,
+  })];
+  const solutionKeys = new Set<string>([canonical.solution.join(" ")]);
+
+  function add(candidate: CFOPStateAlternativeResult | null): void {
+    if (candidate === null || alternatives.length >= limit) return;
+    const key = candidate.result.solution.join(" ");
+    if (solutionKeys.has(key)) return;
+    solutionKeys.add(key);
+    alternatives.push(candidate);
+  }
+
+  try {
+    const crossCandidates = solveCrossCandidates(inputState, 4);
+    const canonicalCrossKey = canonical.cross.moves.join(" ");
+
+    for (const cross of crossCandidates) {
+      if (alternatives.length >= limit) break;
+      if (cross.moves.join(" ") === canonicalCrossKey) continue;
+      add(verifiedAlternative(inputState, "CROSS_VARIANT", { cross }));
+    }
+  } catch {
+    // Cross diversity is optional; bounded F2L strategies may still succeed.
+  }
+
+  if (alternatives.length < limit) {
+    for (const firstSlot of ALL_F2L_SLOTS) {
+      if (alternatives.length >= limit) break;
+      if (isF2LSlotSolved(canonical.cross.stateAfter, firstSlot)) continue;
+
+      add(verifiedAlternative(
+        inputState,
+        "F2L_FIRST_SLOT",
+        { cross: canonical.cross, f2l: { firstSlot } },
+        firstSlot,
+      ));
+    }
+  }
+
+  return Object.freeze(alternatives);
 }
 
 export function solveCFOPFromString(scramble: string): CFOPSolveResult {
