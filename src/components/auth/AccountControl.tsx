@@ -24,7 +24,7 @@ export function AccountControl({
           }}
           type="button"
         >
-          {pending === "SIGN_IN" ? "Opening GitHub…" : "Sign in to save analyses"}
+          {pending === "SIGN_IN" ? "Opening GitHub…" : "Sign in to save"}
         </button>
       </div>
     );

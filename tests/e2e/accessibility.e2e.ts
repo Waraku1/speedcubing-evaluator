@@ -49,7 +49,7 @@ test.describe("C7-C2 automated accessibility closure", () => {
       })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Sign in to save analyses" })
+      page.getByRole("button", { name: "Sign in to save", exact: true })
     ).toBeVisible();
     await expectNoWcagViolations(page, "optional account control");
   });
@@ -60,6 +60,14 @@ test.describe("C7-C2 automated accessibility closure", () => {
       page.getByRole("heading", { name: "Sign in to view saved analyses" })
     ).toBeVisible();
     await expectNoWcagViolations(page, "signed-out saved analyses");
+  });
+
+  test("audits the signed-out procedure-log boundary", async ({ page }) => {
+    await page.goto("/logs");
+    await expect(
+      page.getByRole("heading", { name: "Sign in to view saved procedures" })
+    ).toBeVisible();
+    await expectNoWcagViolations(page, "signed-out saved procedures");
   });
 
   test("audits empty, invalid, READY, loading, result, trace, and API-error states", async ({

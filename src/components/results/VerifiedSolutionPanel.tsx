@@ -1,14 +1,19 @@
 import type { UiSolutionV1 } from "../../lib/ui/evaluateUiTypesV1";
 
+import { SaveProcedureControls } from "../procedures/SaveProcedureControls";
 import { ResultDisclosure } from "./ResultDisclosure";
 import styles from "./results.module.css";
 
 type VerifiedSolutionPanelProps = Readonly<{
+  facelets: string;
+  showSaveProcedure: boolean;
   solution: UiSolutionV1;
   solverDurationMs: number;
 }>;
 
 export function VerifiedSolutionPanel({
+  facelets,
+  showSaveProcedure,
   solution,
   solverDurationMs,
 }: VerifiedSolutionPanelProps) {
@@ -52,6 +57,14 @@ export function VerifiedSolutionPanel({
           <dd>{solution.qtm}</dd>
         </div>
       </dl>
+
+      {showSaveProcedure ? (
+        <SaveProcedureControls
+          facelets={facelets}
+          moves={solution.moves}
+          suggestedLabel="Verified solution"
+        />
+      ) : null}
 
       <ResultDisclosure label="solution technical details">
         <dl className={styles.technicalList}>

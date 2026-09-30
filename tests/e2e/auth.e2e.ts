@@ -36,7 +36,7 @@ test.describe("Auth V1 optional account control", () => {
     await page.route("**/api/auth/**", handleSignInRoute);
     await page.goto("/");
 
-    const signIn = page.getByRole("button", { name: "Sign in to save analyses" });
+    const signIn = page.getByRole("button", { name: "Sign in to save", exact: true });
     await expect(signIn).toBeVisible();
     await page.getByRole("button", { name: "Load solved example" }).click();
     await expect(page.getByRole("button", { name: "Run evaluation" })).toBeEnabled();

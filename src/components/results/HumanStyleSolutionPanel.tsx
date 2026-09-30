@@ -20,6 +20,7 @@ import {
   requestCFOPAlternatives,
   type CFOPAlternativesOperationV1,
 } from "../../lib/ui/cfopAlternativesCube";
+import { SaveProcedureControls } from "../procedures/SaveProcedureControls";
 import styles from "./results.module.css";
 
 type HumanStyleSolutionPanelProps = Readonly<{
@@ -133,8 +134,9 @@ function AlternativePhaseView({
 }
 
 function AlternativesComparison({
+  facelets,
   result,
-}: Readonly<{ result: CFOPAlternativesResultV1 }>) {
+}: Readonly<{ facelets: string; result: CFOPAlternativesResultV1 }>) {
   const [view, setView] = useState<ComparisonView>("FULL");
 
   return (
@@ -179,6 +181,13 @@ function AlternativesComparison({
               Candidate {alternative.ordinal} · Generation strategy: {STRATEGY_LABELS[alternative.strategy]}
             </p>
             <AlternativePhaseView alternative={alternative} view={view} />
+            {view === "FULL" ? (
+              <SaveProcedureControls
+                facelets={facelets}
+                moves={alternative.solution.moves}
+                suggestedLabel={`CFOP candidate ${alternative.ordinal}`}
+              />
+            ) : null}
           </article>
         ))}
       </div>
@@ -426,13 +435,15 @@ export function HumanStyleSolutionPanel({ facelets }: HumanStyleSolutionPanelPro
   const result = committed?.result ?? null;
 
   return (
-    <section aria-labelledby="cfop-heading" className={styles.section}>
+    <>
+      <section aria-labelledby="cfop-heading" className={styles.section}>
       <p className={styles.sectionLabel}>Separate cube solution information</p>
       <h3 id="cfop-heading">Human-style CFOP</h3>
       <p className={styles.supportingCopy}>
         Generate Cross, F2L, OLL, and PLL moves directly from this facelet state.
-        No scramble or observed cube history is reconstructed. This method output
-        is not Human-State evidence and does not change Domain Demand.
+        No scramble or observed cube history is reconstructed. Verified cube-solution
+        information only. No Human-State observation is attached, so this path does
+        not create a separate Domain-Demand evaluation.
       </p>
 
       <div aria-atomic="true" aria-live="polite" className="sr-only" role="status">
@@ -506,6 +517,11 @@ export function HumanStyleSolutionPanel({ facelets }: HumanStyleSolutionPanelPro
             Verified CFOP phase solution
           </h4>
           <CFOPResultContent requestId={committed?.requestId} result={result} />
+          <SaveProcedureControls
+            facelets={facelets}
+            moves={result.solution.moves}
+            suggestedLabel="Human-style CFOP solution"
+          />
           <div className={styles.cfopActions}>
             <button
               className={styles.inlineButton}
@@ -557,13 +573,14 @@ export function HumanStyleSolutionPanel({ facelets }: HumanStyleSolutionPanelPro
               ) : null}
             </div>
           ) : null}
-          {alternativesStatus === "SUCCESS" && alternatives !== null ? (
-            <div ref={alternativesResultRef} tabIndex={-1}>
-              <AlternativesComparison result={alternatives} />
-            </div>
-          ) : null}
         </div>
       ) : null}
-    </section>
+      </section>
+      {alternativesStatus === "SUCCESS" && alternatives !== null ? (
+        <div className={styles.comparisonPlacement} ref={alternativesResultRef} tabIndex={-1}>
+          <AlternativesComparison facelets={facelets} result={alternatives} />
+        </div>
+      ) : null}
+    </>
   );
 }

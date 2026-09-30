@@ -131,6 +131,10 @@ test.describe("public facelet-native CFOP workflow", () => {
     await expect(page.getByTestId("cfop-result")).toContainText("Total HTM");
     await expect(page.getByTestId("cfop-result")).toContainText("No moves required");
     await expect(page.getByTestId("cfop-result")).not.toContainText("Demand");
+    const cfopPanel = page.getByRole("region", { name: "Human-style CFOP" });
+    await expect(cfopPanel.getByText(/does not create a separate Domain-Demand evaluation/)).toBeVisible();
+    await expect(cfopPanel.getByTestId("save-procedure-control")).toBeVisible();
+    await expect(cfopPanel).not.toContainText(/Grip|Finger|Orientation|Continuity/);
     expect(requestCount).toBe(1);
     await expectNoWcagViolations(page, "solved facelet-native CFOP result");
   });
@@ -199,19 +203,25 @@ test.describe("public facelet-native CFOP workflow", () => {
     await expect(page.getByText(
       "These alternatives compare verified cube-solution paths only. They are not Human-State or Domain-Demand evaluations.",
     )).toBeVisible();
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(3);
 
     await page.getByRole("button", { name: "Cross", exact: true }).click();
     await expect(comparison).toContainText("HTM");
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(0);
     await page.getByRole("button", { name: "F2L", exact: true }).click();
     await expect(comparison).toContainText("Solved order:");
     await expect(comparison).toContainText("Macro IDs:");
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(0);
     await page.getByRole("button", { name: "OLL", exact: true }).click();
     await expect(comparison).toContainText("Case ID");
     await expect(comparison).toContainText("Algorithm IDs");
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(0);
     await page.getByRole("button", { name: "PLL", exact: true }).click();
     await expect(comparison).toContainText("Case ID");
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(0);
     await page.getByRole("button", { name: "Full", exact: true }).click();
     await expect(comparison).toContainText("Total QTM");
+    await expect(comparison.getByTestId("save-procedure-control")).toHaveCount(3);
 
     await expect(comparison).not.toContainText(/Best|Recommended|Optimal for humans|Easiest|Fastest for humans/);
     await expectNoWcagViolations(page, "verified CFOP alternatives comparison");

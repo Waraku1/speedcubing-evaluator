@@ -135,7 +135,7 @@ describe("Auth V1 NextAuth configuration", () => {
     const signedOut = renderToStaticMarkup(
       createElement(AccountControl, { authUser: null })
     );
-    expect(signedOut).toContain("Sign in to save analyses");
+    expect(signedOut).toContain("Sign in to save");
 
     const signedIn = renderToStaticMarkup(
       createElement(AccountControl, {

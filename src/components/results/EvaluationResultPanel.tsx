@@ -78,26 +78,37 @@ export const EvaluationResultPanel = forwardRef<
         </div>
       </dl>
 
-      <VerifiedSolutionPanel
-        solution={result.solution}
-        solverDurationMs={result.timings.solverDurationMs}
-      />
-      {snapshot === undefined ? (
-        <HumanStyleSolutionPanel facelets={facelets} />
-      ) : (
-        <SavedHumanStyleSolutionPanel result={snapshot.cfop} />
-      )}
-      <DemandResults demand={result.demand} warnings={result.warnings} />
-      <UnavailableStagesPanel availability={result.availability} />
-      <TraceExplorer
-        expanded={traceExpanded}
-        onExpandedChange={onTraceExpandedChange}
-        onPageChange={onTracePageChange}
-        onSelectRecord={onSelectTraceRecord}
-        page={tracePage}
-        result={result}
-        selectedRecordId={selectedTraceRecordId}
-      />
+      <div className={styles.solutionGrid}>
+        <VerifiedSolutionPanel
+          facelets={facelets}
+          showSaveProcedure={snapshot === undefined}
+          solution={result.solution}
+          solverDurationMs={result.timings.solverDurationMs}
+        />
+        {snapshot === undefined ? (
+          <HumanStyleSolutionPanel facelets={facelets} />
+        ) : (
+          <SavedHumanStyleSolutionPanel result={snapshot.cfop} />
+        )}
+      </div>
+      <section aria-labelledby="analysis-heading" className={styles.analysisRegion}>
+        <p className={styles.eyebrow}>Analysis</p>
+        <h3 id="analysis-heading">Evaluation analysis and provenance</h3>
+        <p className={styles.supportingCopy}>
+          This governed analysis remains attached to the current server-produced evaluation artifact.
+        </p>
+        <DemandResults demand={result.demand} warnings={result.warnings} />
+        <UnavailableStagesPanel availability={result.availability} />
+        <TraceExplorer
+          expanded={traceExpanded}
+          onExpandedChange={onTraceExpandedChange}
+          onPageChange={onTracePageChange}
+          onSelectRecord={onSelectTraceRecord}
+          page={tracePage}
+          result={result}
+          selectedRecordId={selectedTraceRecordId}
+        />
+      </section>
     </section>
   );
 });

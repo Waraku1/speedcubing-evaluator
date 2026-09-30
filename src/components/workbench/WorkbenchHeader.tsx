@@ -6,45 +6,35 @@ import styles from "./workbench.module.css";
 
 export function WorkbenchHeader({
   authUser,
-}: Readonly<{ authUser: AuthUserV1 | null }>) {
+  callbackUrl = "/",
+}: Readonly<{ authUser: AuthUserV1 | null; callbackUrl?: string }>) {
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
-        <div>
-          <p className={styles.eyebrow}>Manual evaluator workbench</p>
-          <h1
-            aria-label="Algorithm Evaluator for Speedcubing"
-            className={styles.pageTitle}
-          >
-            <span aria-hidden="true" data-product-name="full">
-              Algorithm Evaluator for Speedcubing (AES)
-            </span>
-            <span
-              aria-hidden="true"
-              className={styles.compactProductName}
-              data-product-name="compact"
-            >
-              AES
-            </span>
+        <div className={styles.brandBlock}>
+          <h1 aria-label="Algorithm Evaluator for Speedcubing" className={styles.pageTitle}>
+            <Link aria-label="AES home" href="/">
+              <span aria-hidden="true" data-product-name="full">AES</span>
+              <span
+                aria-hidden="true"
+                className={styles.compactProductName}
+                data-product-name="compact"
+              >
+                AES
+              </span>
+            </Link>
           </h1>
+          <span className={styles.productDescriptor}>Algorithm Evaluator for Speedcubing</span>
         </div>
-        <div className={styles.headerAside}>
-          <div className={styles.accountRow}>
-            {authUser === null ? null : (
-              <Link className={styles.savedLink} href="/saved">
-                Saved analyses
-              </Link>
-            )}
-            <AccountControl authUser={authUser} />
-          </div>
-          <div className={styles.releaseNote}>
-            <p>
-              This release analyzes <strong>Domain Demand</strong> for a
-              server-verified cube solution. Downstream scoring is not part of
-              this release.
-            </p>
-            <p>Manual entry is primary; an optional reviewed camera draft is available.</p>
-          </div>
+        <nav aria-label="Primary" className={styles.primaryNav}>
+          <Link href="/">Evaluate</Link>
+          <Link href="/detect" prefetch={false}>Scanner</Link>
+          <Link href="/saved">Saved</Link>
+          <Link href="/logs">Procedures</Link>
+        </nav>
+        <div className={styles.accountRow}>
+          <span className={styles.accountLabel}>Account</span>
+          <AccountControl authUser={authUser} callbackUrl={callbackUrl} />
         </div>
       </div>
     </header>

@@ -49,7 +49,20 @@
 
 @media (max-width: 767px) {
   .accountControl {
-    margin-top: 16px;
+    min-width: 0;
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 479px) {
+  .accountName,
+  .avatar {
+    display: none;
+  }
+
+  .accountButton {
+    max-width: 150px;
+    padding-inline: 10px;
+    white-space: normal;
   }
 }

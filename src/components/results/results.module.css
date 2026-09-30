@@ -2,10 +2,9 @@
   min-width: 0;
   padding: 24px;
   border: 1px solid var(--ui-border);
-  border-top: 4px solid var(--ui-accent);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-card);
   background: var(--ui-surface);
-  box-shadow: 0 1px 2px rgb(23 33 43 / 6%);
+  box-shadow: 0 1px 2px rgb(23 33 43 / 4%);
 }
 
 .resultPanel h2,
@@ -112,6 +111,34 @@
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-card);
   background: var(--ui-surface);
+}
+
+.solutionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.solutionGrid > .section {
+  height: 100%;
+  margin-top: 0;
+}
+
+.comparisonPlacement {
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+
+.analysisRegion {
+  min-width: 0;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 2px solid var(--ui-border-strong);
+}
+
+.analysisRegion > .section:first-of-type {
+  margin-top: 16px;
 }
 
 .headingRow,
@@ -497,9 +524,11 @@
 }
 
 .comparisonPanel {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--ui-border);
+  margin-top: 0;
+  padding: 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-card);
+  background: var(--ui-surface);
 }
 
 .comparisonSelector {
@@ -596,6 +625,17 @@
 
 .comparisonSummary {
   margin-bottom: 0;
+}
+
+@media (min-width: 900px) {
+  .solutionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .comparisonGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 767px) {

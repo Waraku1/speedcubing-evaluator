@@ -5,12 +5,12 @@
 
 .headerInner {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   width: min(100%, var(--content-max));
   margin: 0 auto;
-  padding: 24px 32px;
-  gap: 32px;
+  padding: 12px 32px;
+  gap: 24px;
 }
 
 .eyebrow,
@@ -26,55 +26,89 @@
 
 .pageTitle {
   margin: 0;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.pageTitle a {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-ink);
+  text-decoration: none;
 }
 
 .compactProductName {
   display: none;
 }
 
-.headerAside {
-  display: grid;
-  max-width: 560px;
-  gap: 12px;
+.brandBlock {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.productDescriptor {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.primaryNav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.primaryNav a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 8px 11px;
+  border-radius: var(--radius-control);
+  color: var(--ui-muted);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.primaryNav a:hover {
+  background: var(--ui-subtle);
+  color: var(--ui-ink);
 }
 
 .accountRow {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
 }
 
-.savedLink {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  color: var(--ui-accent);
-  font-weight: 700;
-}
-
-.releaseNote {
-  padding-left: 16px;
-  border-left: 3px solid var(--ui-accent);
+.accountLabel {
   color: var(--ui-muted);
-}
-
-.releaseNote p {
-  margin: 0;
-}
-
-.releaseNote p + p {
-  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .workbench {
   display: grid;
-  grid-template-columns: minmax(0, 860px);
+  grid-template-columns: minmax(0, 1120px);
   justify-content: center;
   gap: 24px;
+}
+
+.inputComposition {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-card);
+  background: var(--ui-surface);
+  box-shadow: 0 1px 2px rgb(23 33 43 / 4%);
 }
 
 .inputPanel,
@@ -82,10 +116,15 @@
 .acquisitionPanel {
   min-width: 0;
   padding: 24px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-panel);
+  border: 0;
+  border-radius: 0;
   background: var(--ui-surface);
-  box-shadow: 0 1px 2px rgb(23 33 43 / 6%);
+  box-shadow: none;
+}
+
+.inputPanel,
+.acquisitionPanel {
+  border-bottom: 1px solid var(--ui-border);
 }
 
 .acquisitionPanel {
@@ -273,49 +312,34 @@
   margin-top: 12px;
 }
 
-@media (min-width: 1100px) {
-  .workbench[data-has-result="true"] {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    align-items: start;
-  }
-
-  .workbench[data-has-result="true"] .inputPanel {
-    grid-row: span 2;
-  }
-}
-
 @media (max-width: 767px) {
   .headerInner {
-    display: block;
-    padding: 24px;
+    flex-wrap: wrap;
+    padding: 12px 24px;
   }
 
-  .releaseNote {
-    margin-top: 16px;
-  }
-
-  .headerAside {
-    max-width: none;
+  .primaryNav {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 
   .accountRow {
-    align-items: flex-start;
-    flex-direction: column-reverse;
-    margin-top: 16px;
-  }
-
-  .accountRow > div {
-    margin-top: 0;
+    margin-left: auto;
   }
 }
 
 @media (max-width: 479px) {
   .headerInner {
-    padding: 20px 16px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 10px 16px;
+    gap: 6px 12px;
   }
 
   .pageTitle {
-    font-size: 24px;
+    font-size: 21px;
   }
 
   .pageTitle [data-product-name="full"] {
@@ -324,6 +348,25 @@
 
   .compactProductName {
     display: inline;
+  }
+
+  .productDescriptor,
+  .accountLabel {
+    display: none;
+  }
+
+  .primaryNav {
+    grid-column: 1 / -1;
+    gap: 2px;
+  }
+
+  .primaryNav a {
+    min-height: 44px;
+    padding-inline: 9px;
+  }
+
+  .accountRow {
+    min-width: 0;
   }
 
   .inputPanel,

@@ -14,14 +14,14 @@ test.describe("Saved Analysis V1 anonymous boundary", () => {
     await expect(page.getByRole("heading", { name: "Evaluation result" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Save this analysis" })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Sign in to save analyses" }).last()
+      page.getByRole("button", { name: "Sign in to save", exact: true }).last()
     ).toBeVisible();
   });
 
   test("protects saved pages without adding a root login wall", async ({ page }) => {
     await page.goto("/saved");
     await expect(page.getByRole("heading", { name: "Sign in to view saved analyses" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in to save analyses" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in to save", exact: true })).toBeVisible();
 
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Run evaluation" })).toBeVisible();

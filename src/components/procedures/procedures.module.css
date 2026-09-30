@@ -1,0 +1,288 @@
+.saveControl,
+.listPanel,
+.detailPanel {
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.saveControl {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-width: 1px 0 0;
+}
+
+.saveTitle,
+.saveCopy,
+.feedback,
+.itemMeta,
+.detailNotice {
+  margin: 0;
+}
+
+.saveTitle {
+  font-weight: 800;
+}
+
+.saveCopy,
+.itemMeta,
+.detailNotice {
+  color: var(--ui-muted);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+
+.fieldHint,
+.fieldError {
+  margin: -4px 0 0;
+  font-size: 12px;
+}
+
+.fieldHint {
+  color: var(--ui-muted);
+}
+
+.fieldError,
+.errorMessage {
+  color: var(--ui-error);
+}
+
+.actions,
+.itemActions,
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton,
+.primaryLink,
+.itemActions a,
+.itemActions button,
+.loadMore,
+.errorMessage button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryButton,
+.primaryLink {
+  border-color: var(--ui-ink);
+  background: var(--ui-ink);
+  color: var(--ui-surface);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.itemActions button:disabled,
+.loadMore:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.successMessage {
+  color: #285c39;
+}
+
+.feedback a,
+.detailPanel a,
+.listPanel a {
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+.listPanel,
+.detailPanel {
+  padding: 24px;
+  border-radius: var(--radius-card);
+}
+
+.listHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.listHeading h2,
+.detailPanel h2,
+.emptyState h3 {
+  margin: 0;
+}
+
+.procedureList {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.procedureList > li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.procedureList h3,
+.procedureList p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.itemMeta {
+  margin-top: 5px;
+}
+
+.emptyState,
+.errorMessage {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.detailLayout {
+  display: grid;
+  gap: 20px;
+}
+
+.detailHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.detailNotice {
+  padding: 12px 14px;
+  border-left: 3px solid var(--ui-border-strong);
+  background: var(--ui-subtle);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 120px));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.metrics > div,
+.identity > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+}
+
+.metrics dt,
+.identity dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metrics dd,
+.identity dd {
+  margin: 3px 0 0;
+}
+
+.metrics dd {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.identity {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.moveList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moveList li {
+  min-width: 42px;
+  padding: 7px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-control);
+  background: var(--ui-subtle);
+  font-family: var(--font-mono);
+  font-weight: 750;
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .listHeading,
+  .procedureList > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .itemActions {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 479px) {
+  .listPanel,
+  .detailPanel {
+    padding: 16px;
+  }
+
+  .itemActions,
+  .actions,
+  .headerActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+}

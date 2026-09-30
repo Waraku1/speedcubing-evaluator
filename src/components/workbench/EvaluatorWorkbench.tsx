@@ -188,21 +188,8 @@ export function EvaluatorWorkbench() {
         {liveMessage()}
       </p>
 
-      <section aria-labelledby="acquisition-heading" className={styles.acquisitionPanel}>
-        <div>
-          <p className={styles.stepLabel}>Optional helper</p>
-          <h2 id="acquisition-heading">Prefer a camera-assisted draft?</h2>
-          <p>
-            Scan two poses locally, review every sticker, then return here for the
-            same manual confirmation and Run evaluation step.
-          </p>
-        </div>
-        <Link className={styles.scannerLink} href="/detect" prefetch={false}>
-          Open optional camera scanner
-        </Link>
-      </section>
-
-      <CubeInputPanel
+      <section aria-label="Cube state input" className={styles.inputComposition}>
+        <CubeInputPanel
         activeStickerIndex={state.activeStickerIndex}
         disabled={submitting}
         draft={state.draft}
@@ -219,9 +206,23 @@ export function EvaluatorWorkbench() {
         selectedToken={state.selectedToken}
         validation={state.validation}
         validationRef={validationRef}
-      />
+        />
 
-      <section aria-labelledby="submit-heading" className={styles.actionPanel}>
+        <section aria-labelledby="acquisition-heading" className={styles.acquisitionPanel}>
+          <div>
+            <p className={styles.stepLabel}>Optional input method</p>
+            <h2 id="acquisition-heading">Camera-assisted draft</h2>
+            <p>
+              Scan two poses locally, review every sticker, then return for the
+              same manual confirmation and evaluation.
+            </p>
+          </div>
+          <Link className={styles.scannerLink} href="/detect" prefetch={false}>
+            Open camera scanner
+          </Link>
+        </section>
+
+        <section aria-labelledby="submit-heading" className={styles.actionPanel}>
         <div className={styles.sectionHeading}>
           <div>
             <p className={styles.stepLabel}>Step 2</p>
@@ -331,6 +332,7 @@ export function EvaluatorWorkbench() {
             ) : null}
           </div>
         ) : null}
+        </section>
       </section>
 
       {state.phase === "SUCCESS" && state.result !== null ? (

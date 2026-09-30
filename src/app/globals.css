@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --ui-canvas: #f6f8fa;
+  --ui-canvas: #f4f5f6;
   --ui-surface: #ffffff;
-  --ui-subtle: #f0f3f6;
-  --ui-ink: #17212b;
-  --ui-muted: #586775;
-  --ui-border: #cbd4dc;
-  --ui-border-strong: #8795a1;
-  --ui-accent: #285f8f;
-  --ui-accent-hover: #1f4d75;
+  --ui-subtle: #f1f2f3;
+  --ui-ink: #202a33;
+  --ui-muted: #59636d;
+  --ui-border: #d2d7dc;
+  --ui-border-strong: #8d969e;
+  --ui-accent: #253542;
+  --ui-accent-hover: #17242e;
   --ui-focus: #005fcc;
   --ui-error: #9b2c2c;
   --ui-warning: #7a4b00;
@@ -22,8 +22,8 @@
   --space-8: 32px;
   --space-12: 48px;
   --radius-control: 6px;
-  --radius-card: 10px;
-  --radius-panel: 14px;
+  --radius-card: 8px;
+  --radius-panel: 10px;
   --content-max: 1280px;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;

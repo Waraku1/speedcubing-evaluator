@@ -42,7 +42,7 @@ export function SaveAnalysisControls({ facelets }: Readonly<{ facelets: string }
           onClick={() => void signIn("github", { callbackUrl: "/" })}
           type="button"
         >
-          Sign in to save analyses
+          Sign in to save
         </button>
       </section>
     );

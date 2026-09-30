@@ -703,6 +703,10 @@ test.describe("C4 manual evaluator workbench", () => {
 
     await page.keyboard.press("Tab");
     await expect(
+      page.getByRole("button", { name: "Sign in to save procedure" }).first()
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
       page.getByRole("button", { name: "Show solution technical details" })
     ).toBeFocused();
     await page.keyboard.press("Tab");
@@ -778,7 +782,7 @@ test.describe("C4 manual evaluator workbench", () => {
     expect(names).not.toMatch(
       /onnxruntime|cube_pose\.onnx|\.wasm(?:\?|$)|\/detect(?:\?|$)/i
     );
-    await expect(page.locator('a[href="/detect"]')).toHaveCount(1);
+    await expect(page.locator('a[href="/detect"]')).toHaveCount(2);
     expect(encodedRootJs).toBeLessThanOrEqual(250 * 1024);
     expect(decodedRootJs).toBeLessThanOrEqual(800 * 1024);
   });
